@@ -1,0 +1,76 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "Mailman",
+  "projectDescription": "An open source CLI alternative to Postman for managing and executing HTTP requests from the terminal.",
+  "theme": "palm",
+  "primaryColor": "#4A90E2",
+  "lightColor": "#7AB8FF",
+  "darkColor": "#2E5B8F",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get Started",
+        "pages": [
+          "introduction",
+          "installation",
+          "quickstart"
+        ]
+      },
+      {
+        "group": "Core Concepts",
+        "pages": [
+          "concepts/request-files",
+          "concepts/environments",
+          "concepts/variables",
+          "concepts/cookies"
+        ]
+      },
+      {
+        "group": "Command Reference",
+        "pages": [
+          "commands/init",
+          "commands/new",
+          "commands/list",
+          "commands/view",
+          "commands/run",
+          "commands/set-path"
+        ]
+      },
+      {
+        "group": "Guides",
+        "pages": [
+          "guides/configuration",
+          "guides/authentication",
+          "guides/environment-files",
+          "guides/variable-resolution"
+        ]
+      },
+      {
+        "group": "Examples",
+        "pages": [
+          "examples/get-request",
+          "examples/post-request",
+          "examples/authentication",
+          "examples/multiple-environments"
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "JSON-based request files with variable interpolation",
+    "Multiple environment support with config-driven variables",
+    "Runtime variable overrides and interactive prompts",
+    "Request previewing before execution",
+    "Cookie management with named cookie groups",
+    "Environment file support (.env and .env.<environment>)"
+  ],
+  "publicApiSurface": [
+    "mailman init",
+    "mailman new",
+    "mailman list",
+    "mailman view <filepath>",
+    "mailman run [filepath]",
+    "mailman set-path [path]",
+    "mailman show-path"
+  ]
+}
