@@ -1,0 +1,391 @@
+---
+title: Environments
+description: Configure multiple environments with different variables and settings
+---
+
+Environments allow you to maintain different configurations for various deployment contexts (development, staging, production, etc.). Each environment has its own variables and cookie groups.
+
+## Configuration Structure
+
+Environments are defined in your `config.json` file:
+
+```typescript src/types.ts
+export interface Config {
+  defaultEnvironment: string;
+  environments: Record<string, Environment>;
+}
+
+export interface Environment {
+  variables: Variables;
+  cookies?: CookieGroup[];
+}
+
+export interface Variables {
+  [key: string]: string;
+}
+```
+
+<ParamField path="defaultEnvironment" type="string" required>
+  The environment to use when no `--env` flag is specified
+</ParamField>
+
+<ParamField path="environments" type="Record<string, Environment>" required>
+  A map of environment names to their configurations
+</ParamField>
+
+## Example Configuration
+
+<CodeGroup>
+
+```json config.json (Basic)
+{
+  "defaultEnvironment": "dev",
+  "environments": {
+    "dev": {
+      "variables": {
+        "baseUrl": "http://localhost:3000",
+        "apiVersion": "v1"
+      }
+    },
+    "prod": {
+      "variables": {
+        "baseUrl": "https://api.example.com",
+        "apiVersion": "v2"
+      }
+    }
+  }
+}
+```
+
+```json config.json (With Cookies)
+{
+  "defaultEnvironment": "dev",
+  "environments": {
+    "dev": {
+      "variables": {
+        "baseUrl": "http://localhost:3000"
+      },
+      "cookies": [
+        {
+          "name": "Admin Session",
+          "cookies": {
+            "sessionId": "dev-session-123",
+            "userId": "admin"
+          }
+        },
+        {
+          "name": "User Session",
+          "cookies": {
+            "sessionId": "dev-session-456",
+            "userId": "user"
+          }
+        }
+      ]
+    },
+    "prod": {
+      "variables": {
+        "baseUrl": "https://api.example.com"
+      },
+      "cookies": [
+        {
+          "name": "Production Session",
+          "cookies": {
+            "sessionId": "prod-session-xyz",
+            "token": "prod-token-abc"
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+</CodeGroup>
+
+## Using Environments
+
+<Tabs>
+  <Tab title="Default Environment">
+    If you don't specify an environment, Mailman uses the `defaultEnvironment`:
+
+    ```bash
+    mailman run requests/get-users.json
+    # Uses "dev" environment (from defaultEnvironment)
+    ```
+
+    Output:
+    ```
+    Running: Get Users
+    Environment: dev
+    GET http://localhost:3000/users
+    ```
+  </Tab>
+
+  <Tab title="Specify Environment">
+    Use the `--env` flag to select a different environment:
+
+    ```bash
+    mailman run requests/get-users.json --env prod
+    ```
+
+    Output:
+    ```
+    Running: Get Users
+    Environment: prod
+    GET https://api.example.com/users
+    ```
+  </Tab>
+
+  <Tab title="With .env Files">
+    Environment-specific `.env` files are automatically loaded:
+
+    ```bash
+    # Uses .env
+    mailman run requests/get-users.json
+
+    # Uses .env.prod
+    mailman run requests/get-users.json --env prod
+    ```
+
+    See the implementation in `src/commands/run.ts:95-100`:
+
+    ```typescript
+    let envFile = ".env";
+    if (options?.env && config.defaultEnvironment !== options?.env) {
+      envFile += `.${options.env}`;
+    }
+    const envPath = path.join(getConfigDir(), envFile);
+    const envs = dotenv.config({ path: envPath }).parsed;
+    ```
+  </Tab>
+</Tabs>
+
+## Environment Resolution
+
+When you run a request, Mailman resolves the environment in this order:
+
+<Accordion title="1. Load Config">
+  The `loadConfig()` function searches for `config.json`:
+
+  ```typescript src/utils/config.ts
+  export function loadConfig(): Config | null {
+    const configPath = findConfigPath();
+    if (!configPath) {
+      return null;
+    }
+    
+    const content = fs.readFileSync(configPath, 'utf-8');
+    const parsed: unknown = JSON.parse(content);
+    if (isConfig(parsed)) {
+      return parsed;
+    }
+    return null;
+  }
+  ```
+
+  It searches from the current directory upward, then checks the default project path.
+</Accordion>
+
+<Accordion title="2. Select Environment">
+  The environment is selected based on the `--env` flag or `defaultEnvironment`:
+
+  ```typescript src/utils/config.ts
+  export function getEnvironmentObject(
+    config: Config,
+    envName?: string,
+  ): Environment {
+    const targetEnvName = envName || config.defaultEnvironment;
+    const envVariables = config.environments[targetEnvName];
+    
+    if (!envVariables) {
+      throw new Error(`Environment "${targetEnvName}" not found in config`);
+    }
+    
+    return envVariables;
+  }
+  ```
+</Accordion>
+
+<Accordion title="3. Extract Variables and Cookies">
+  The selected environment's variables and cookies are extracted:
+
+  ```typescript src/commands/run.ts
+  const { variables, cookies } = getEnvironmentObject(config, options?.env);
+  ```
+
+  These are then used during request resolution.
+</Accordion>
+
+## Environment Variables Priority
+
+Variables from different sources are merged with this precedence (highest to lowest):
+
+1. Command-line `--var` arguments
+2. `.env` or `.env.{environment}` files
+3. Request file `defaultValues`
+4. Environment `variables` from `config.json`
+5. Interactive prompts for unfilled variables
+
+This is implemented in `src/commands/run.ts:94-118`:
+
+```typescript
+const { variables, cookies } = getEnvironmentObject(config, options?.env);
+
+// Load .env file
+let envFile = ".env";
+if (options?.env && config.defaultEnvironment !== options?.env) {
+  envFile += `.${options.env}`;
+}
+const envPath = path.join(getConfigDir(), envFile);
+const envs = dotenv.config({ path: envPath }).parsed;
+
+// Merge in this order (later overwrites earlier)
+if (request?.defaultValues) {
+  for (const [key, value] of Object.entries(request?.defaultValues)) {
+    variables[key] = value;
+  }
+}
+if (envs) {
+  for (const [key, value] of Object.entries(envs)) {
+    variables[key] = value;
+  }
+}
+for (const v of options?.var ?? []) {
+  const [key, ...rest] = v.split("=");
+  variables[key] = rest.join("=");
+}
+```
+
+<Note>
+Later sources override earlier ones, so CLI arguments have the highest priority.
+</Note>
+
+## Working with .env Files
+
+Mailman integrates with dotenv to load environment-specific variables:
+
+<CodeGroup>
+
+```bash .env (Default)
+# Used when no --env flag is provided
+API_KEY=dev-api-key-12345
+DATABASE_URL=postgresql://localhost:5432/myapp_dev
+```
+
+```bash .env.prod (Production)
+# Used with --env prod
+API_KEY=prod-api-key-67890
+DATABASE_URL=postgresql://prod-server:5432/myapp_prod
+```
+
+```bash .env.staging (Staging)
+# Used with --env staging
+API_KEY=staging-api-key-abcde
+DATABASE_URL=postgresql://staging-server:5432/myapp_staging
+```
+
+</CodeGroup>
+
+<Note>
+Add `.env*` to your `.gitignore` to avoid committing sensitive credentials.
+</Note>
+
+## Multiple Environment Pattern
+
+A common pattern is to have minimal variables in `config.json` and keep secrets in `.env` files:
+
+```json config.json
+{
+  "defaultEnvironment": "dev",
+  "environments": {
+    "dev": {
+      "variables": {
+        "baseUrl": "http://localhost:3000",
+        "apiVersion": "v1"
+      }
+    },
+    "staging": {
+      "variables": {
+        "baseUrl": "https://staging-api.example.com",
+        "apiVersion": "v1"
+      }
+    },
+    "prod": {
+      "variables": {
+        "baseUrl": "https://api.example.com",
+        "apiVersion": "v2"
+      }
+    }
+  }
+}
+```
+
+```bash .env.dev
+API_KEY=dev-key-here
+DEBUG=true
+```
+
+```bash .env.staging
+API_KEY=staging-key-here
+DEBUG=false
+```
+
+```bash .env.prod
+API_KEY=prod-key-here
+DEBUG=false
+LOG_LEVEL=error
+```
+
+This approach keeps your `config.json` safe to commit while protecting secrets in `.env` files.
+
+## Environment Initialization
+
+The `mailman init` command creates a starter configuration:
+
+```typescript src/commands/init.ts
+const SAMPLE_CONFIG: Config = {
+  defaultEnvironment: "dev",
+  environments: {
+    dev: {
+      variables: {
+        baseUrl: "http://localhost:3000",
+        exampleVariable: "dev-example-variable",
+      },
+    },
+    prod: {
+      variables: {
+        baseUrl: "https://api.example.com",
+        exampleVariable: "prod-example-variable",
+      },
+    },
+  },
+};
+```
+
+## Best Practices
+
+<Note>
+**Use descriptive environment names**: `dev`, `staging`, `prod` are common, but you can use any names that match your workflow
+</Note>
+
+<Note>
+**Keep secrets in .env files**: Store API keys, tokens, and other sensitive data in `.env` files, not `config.json`
+</Note>
+
+<Note>
+**Set a sensible default**: Make your `defaultEnvironment` the one you use most often (usually `dev`)
+</Note>
+
+<Note>
+**Document environment differences**: Use comments in your config to note what makes each environment unique
+</Note>
+
+<Note>
+**Test environment switching**: Verify your requests work correctly in all environments before deploying
+</Note>
+
+## Related Concepts
+
+- [Variables](/concepts/variables) - Learn about variable interpolation and resolution
+- [Request Files](/concepts/request-files) - Understand how requests use environment variables
+- [Cookies](/concepts/cookies) - Manage environment-specific cookie groups

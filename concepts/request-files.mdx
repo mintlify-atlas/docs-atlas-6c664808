@@ -1,0 +1,281 @@
+---
+title: Request Files
+description: Learn how to create and structure HTTP request definitions in Mailman
+---
+
+Request files are JSON documents that define HTTP requests you want to execute. They live in the `requests/` directory and contain all the information needed to make an API call.
+
+## File Structure
+
+Each request file must conform to the `RequestFile` interface:
+
+```typescript src/types.ts
+export interface RequestFile {
+  name: string;
+  method: HttpMethod;
+  url: string;
+  headers?: Record<string, string>;
+  defaultValues?: Record<string, string>;
+  body?: unknown;
+  cookies?: boolean;
+}
+
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+```
+
+<ParamField path="name" type="string" required>
+  A human-readable name for the request that appears in the CLI
+</ParamField>
+
+<ParamField path="method" type="HttpMethod" required>
+  The HTTP method: `GET`, `POST`, `PUT`, `PATCH`, or `DELETE`
+</ParamField>
+
+<ParamField path="url" type="string" required>
+  The request URL. Supports variable interpolation using `{{variableName}}` syntax
+</ParamField>
+
+<ParamField path="headers" type="Record<string, string>">
+  Optional HTTP headers. Values support variable interpolation
+</ParamField>
+
+<ParamField path="defaultValues" type="Record<string, string>">
+  Default values for variables used in this request. These override environment variables
+</ParamField>
+
+<ParamField path="body" type="unknown">
+  Request body for POST, PUT, and PATCH requests. Can be any JSON-serializable value
+</ParamField>
+
+<ParamField path="cookies" type="boolean">
+  When `true`, prompts you to select a cookie group from your environment before running the request
+</ParamField>
+
+## Examples
+
+<CodeGroup>
+
+```json requests/get-users.json
+{
+  "name": "Get Users",
+  "method": "GET",
+  "url": "{{baseUrl}}/users",
+  "headers": {
+    "Authorization": "Bearer {{API_KEY}}"
+  }
+}
+```
+
+```json requests/create-user.json
+{
+  "name": "Create User",
+  "method": "POST",
+  "url": "{{baseUrl}}/users",
+  "headers": {
+    "Authorization": "Bearer {{API_KEY}}",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "name": "John Doe",
+    "email": "john@example.com"
+  }
+}
+```
+
+```json requests/with-defaults.json
+{
+  "name": "Update User Profile",
+  "method": "PATCH",
+  "url": "{{baseUrl}}/users/{{userId}}",
+  "headers": {
+    "Authorization": "Bearer {{API_KEY}}",
+    "Content-Type": "application/json"
+  },
+  "defaultValues": {
+    "userId": "123"
+  },
+  "body": {
+    "bio": "Updated bio text"
+  }
+}
+```
+
+```json requests/with-cookies.json
+{
+  "name": "Get Profile (Authenticated)",
+  "method": "GET",
+  "url": "{{baseUrl}}/profile",
+  "cookies": true
+}
+```
+
+</CodeGroup>
+
+## Variable Interpolation
+
+Request files support variable interpolation using the `{{variableName}}` syntax. Variables can appear in:
+
+- URLs
+- Header values
+- Request body (strings only)
+
+Variables are resolved in this order:
+
+1. **Command-line arguments** via `--var key=value`
+2. **Environment files** (`.env` or `.env.{environment}`)
+3. **Request defaultValues** from the request file
+4. **Environment variables** from `config.json`
+5. **Interactive prompts** if still unfilled
+
+<Note>
+The variable resolution order means you can override environment-specific values on a per-request basis using `defaultValues`, or on a per-execution basis using `--var`.
+</Note>
+
+## Creating Request Files
+
+<Tabs>
+  <Tab title="Manual Creation">
+    Create a new `.json` file in the `requests/` directory:
+
+    ```bash
+    touch requests/my-request.json
+    ```
+
+    Then edit it with your request definition:
+
+    ```json
+    {
+      "name": "My Request",
+      "method": "GET",
+      "url": "{{baseUrl}}/endpoint"
+    }
+    ```
+  </Tab>
+
+  <Tab title="Using mailman init">
+    The `mailman init` command creates sample request files:
+
+    ```bash
+    mailman init
+    ```
+
+    This generates:
+    - `requests/get-users.json`
+    - `requests/create-user.json`
+  </Tab>
+
+  <Tab title="Inline Requests">
+    You can also run requests without saving them to files:
+
+    ```bash
+    mailman run
+    # Select "Run new request"
+    # Fill in the details interactively
+    ```
+  </Tab>
+</Tabs>
+
+## Request Resolution
+
+Before execution, Mailman processes your request file through several steps:
+
+<Accordion title="1. Load Request File">
+  The JSON file is parsed and validated against the `RequestFile` interface. The `loadRequest()` function in `src/utils/request.ts` handles this.
+</Accordion>
+
+<Accordion title="2. Resolve Cookies">
+  If `cookies: true`, Mailman prompts you to select a cookie group and injects a `Cookie` header:
+
+  ```typescript src/utils/resolveCookieHeaders.ts
+  // Converts cookie group to Cookie header
+  let cookieStr = "";
+  for (const [key, value] of Object.entries(resCookies.cookies)) {
+    cookieStr += key + "=" + value + "; ";
+  }
+  request.headers["Cookie"] = cookieStr;
+  ```
+</Accordion>
+
+<Accordion title="3. Merge Variables">
+  Variables are collected from multiple sources:
+
+  ```typescript src/commands/run.ts
+  // 1. Environment variables from config
+  const { variables } = getEnvironmentObject(config, options?.env);
+  
+  // 2. Request default values
+  if (request?.defaultValues) {
+    for (const [key, value] of Object.entries(request?.defaultValues)) {
+      variables[key] = value;
+    }
+  }
+  
+  // 3. .env file
+  const envs = dotenv.config({ path: envPath }).parsed;
+  if (envs) {
+    for (const [key, value] of Object.entries(envs)) {
+      variables[key] = value;
+    }
+  }
+  
+  // 4. CLI arguments
+  for (const v of options?.var ?? []) {
+    const [key, ...rest] = v.split("=");
+    variables[key] = rest.join("=");
+  }
+  ```
+</Accordion>
+
+<Accordion title="4. Interpolate Variables">
+  The `interpolateObject()` function recursively replaces all `{{variableName}}` patterns:
+
+  ```typescript src/utils/variables.ts
+  export function interpolate(template: string, variables: Variables): string {
+    return template.replace(
+      /\{\{(\w+)\}\}/g,
+      (match: string, key: string): string => {
+        if (Object.prototype.hasOwnProperty.call(variables, key)) {
+          return variables[key];
+        }
+        return match; // Leave unfilled if not found
+      },
+    );
+  }
+  ```
+</Accordion>
+
+<Accordion title="5. Prompt for Missing Variables">
+  Any remaining `{{variableName}}` patterns trigger interactive prompts:
+
+  ```typescript src/utils/variables.ts
+  const unfilledVariables = findUnfilledVariablesInObject(resolved);
+  if (unfilledVariables.length > 0) {
+    const filledVariables = await fillUnfilledVariables(unfilledVariables);
+    // Re-resolve with filled variables
+  }
+  ```
+</Accordion>
+
+## Best Practices
+
+<Note>
+**Organize by feature**: Group related requests in subdirectories like `requests/auth/`, `requests/users/`
+</Note>
+
+<Note>
+**Use descriptive names**: Choose names that clearly indicate what the request does
+</Note>
+
+<Note>
+**Leverage defaultValues**: Set sensible defaults for testing while allowing overrides in production
+</Note>
+
+<Note>
+**Keep sensitive data out**: Never hardcode API keys or secrets. Use variables and `.env` files instead
+</Note>
+
+## Related Concepts
+
+- [Variables](/concepts/variables) - Learn about variable interpolation and resolution
+- [Environments](/concepts/environments) - Understand how to configure environment-specific settings
+- [Cookies](/concepts/cookies) - Manage authentication cookies across requests

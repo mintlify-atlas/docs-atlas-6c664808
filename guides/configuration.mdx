@@ -1,0 +1,251 @@
+---
+title: Configuration
+description: Learn how to structure config.json, define environments, and manage default settings for your Mailman projects.
+---
+
+# Configuration
+
+Mailman uses a `config.json` file to manage environments, variables, and default settings. This file is the central hub for your project configuration.
+
+## File Location
+
+Mailman searches for `config.json` in the following order:
+
+1. Current directory and parent directories (walking up the tree)
+2. The global default project path (set with `mailman set-path`)
+
+This allows you to:
+- Keep project-specific configurations in your repository
+- Use a global configuration for quick testing
+- Override global settings by placing `config.json` in your project
+
+<Tip>Run `mailman init` in your project directory to create a starter `config.json`</Tip>
+
+## Configuration Structure
+
+The `config.json` file has two main sections:
+
+```json config.json
+{
+  "defaultEnvironment": "dev",
+  "environments": {
+    "dev": {
+      "variables": {
+        "baseUrl": "http://localhost:3000",
+        "exampleVariable": "dev-example-variable"
+      }
+    },
+    "prod": {
+      "variables": {
+        "baseUrl": "https://api.example.com",
+        "exampleVariable": "prod-example-variable"
+      }
+    }
+  }
+}
+```
+
+### Default Environment
+
+The `defaultEnvironment` field specifies which environment to use when no `-e` flag is provided:
+
+```bash
+mailman run requests/get-users.json
+# Uses "dev" environment by default
+```
+
+### Environments Object
+
+Each environment is a key in the `environments` object and contains:
+
+- **`variables`** (required): Key-value pairs for variable interpolation
+- **`cookies`** (optional): Named cookie groups for session management
+
+## Working with Variables
+
+Variables defined in `config.json` are available for interpolation in your request files using the `{{variableName}}` syntax.
+
+### Example: Multi-Environment Setup
+
+```json config.json
+{
+  "defaultEnvironment": "local",
+  "environments": {
+    "local": {
+      "variables": {
+        "baseUrl": "http://localhost:8080",
+        "apiVersion": "v1",
+        "timeout": "5000"
+      }
+    },
+    "staging": {
+      "variables": {
+        "baseUrl": "https://staging-api.company.com",
+        "apiVersion": "v2",
+        "timeout": "10000"
+      }
+    },
+    "production": {
+      "variables": {
+        "baseUrl": "https://api.company.com",
+        "apiVersion": "v2",
+        "timeout": "15000"
+      }
+    }
+  }
+}
+```
+
+Use these variables in your requests:
+
+```json requests/get-resource.json
+{
+  "name": "Get Resource",
+  "method": "GET",
+  "url": "{{baseUrl}}/{{apiVersion}}/resource",
+  "headers": {
+    "X-Request-Timeout": "{{timeout}}"
+  }
+}
+```
+
+## Cookie Groups
+
+Cookie groups allow you to manage session cookies for authenticated requests. Define them per environment:
+
+```json config.json
+{
+  "defaultEnvironment": "dev",
+  "environments": {
+    "dev": {
+      "variables": {
+        "baseUrl": "http://localhost:3000"
+      },
+      "cookies": [
+        {
+          "name": "Admin Session",
+          "cookies": {
+            "sessionId": "abc123",
+            "userId": "admin"
+          }
+        },
+        {
+          "name": "User Session",
+          "cookies": {
+            "sessionId": "xyz789",
+            "userId": "testuser"
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+Enable cookies in your request file:
+
+```json requests/authenticated-request.json
+{
+  "name": "Get Profile",
+  "method": "GET",
+  "url": "{{baseUrl}}/profile",
+  "cookies": true
+}
+```
+
+<Note>
+When you run a request with `"cookies": true`, Mailman will prompt you to select a cookie group if multiple are defined.
+</Note>
+
+## TypeScript Type Definition
+
+From the Mailman source code, the configuration interface is:
+
+```typescript src/types.ts
+export interface Config {
+  defaultEnvironment: string;
+  environments: Record<string, Environment>;
+}
+
+export interface Environment {
+  variables: Variables;
+  cookies?: CookieGroup[];
+}
+
+export interface Variables {
+  [key: string]: string;
+}
+
+export interface CookieGroup {
+  name: string;
+  cookies: Record<string, string>;
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Meaningful Names" icon="tag">
+    Name environments clearly: `dev`, `staging`, `prod` rather than `env1`, `env2`
+  </Card>
+  <Card title="Keep Secrets Out" icon="lock">
+    Don't store API keys or secrets in `config.json`. Use `.env` files instead (see [Environment Files](/guides/environment-files))
+  </Card>
+  <Card title="Version Control" icon="code-branch">
+    Commit `config.json` to your repository so your team shares the same environment structure
+  </Card>
+  <Card title="Consistent Variables" icon="equals">
+    Use the same variable names across environments for easier request portability
+  </Card>
+</CardGroup>
+
+## Example: Complete Configuration
+
+```json config.json
+{
+  "defaultEnvironment": "dev",
+  "environments": {
+    "dev": {
+      "variables": {
+        "baseUrl": "http://localhost:3000",
+        "apiVersion": "v1",
+        "region": "us-east-1"
+      },
+      "cookies": [
+        {
+          "name": "Local Admin",
+          "cookies": {
+            "auth_token": "dev-token-123",
+            "user_id": "1"
+          }
+        }
+      ]
+    },
+    "staging": {
+      "variables": {
+        "baseUrl": "https://staging.example.com",
+        "apiVersion": "v2",
+        "region": "us-west-2"
+      }
+    },
+    "prod": {
+      "variables": {
+        "baseUrl": "https://api.example.com",
+        "apiVersion": "v2",
+        "region": "us-east-1"
+      }
+    }
+  }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Environment Files" icon="file" href="/guides/environment-files">
+    Learn how to use `.env` files for secrets and environment-specific overrides
+  </Card>
+  <Card title="Variable Resolution" icon="brackets-curly" href="/guides/variable-resolution">
+    Understand the priority order when variables come from multiple sources
+  </Card>
+</CardGroup>

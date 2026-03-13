@@ -1,0 +1,460 @@
+---
+title: 'Multiple Environments'
+description: 'Learn how to manage development, staging, and production environments'
+icon: 'layer-group'
+---
+
+Mailman makes it easy to work with multiple environments, allowing you to use the same request files across development, staging, and production.
+
+## Understanding Environments
+
+Environments let you define different configurations for different stages of your development workflow. Each environment has its own set of variables and can have its own `.env` file.
+
+## Basic Environment Setup
+
+<Steps>
+  <Step title="Configure multiple environments">
+    Create a `config.json` file with multiple environments:
+
+    ```json config.json
+    {
+      "defaultEnvironment": "dev",
+      "environments": {
+        "dev": {
+          "variables": {
+            "baseUrl": "http://localhost:3000",
+            "apiVersion": "v1",
+            "timeout": "5000"
+          }
+        },
+        "staging": {
+          "variables": {
+            "baseUrl": "https://staging-api.example.com",
+            "apiVersion": "v1",
+            "timeout": "10000"
+          }
+        },
+        "prod": {
+          "variables": {
+            "baseUrl": "https://api.example.com",
+            "apiVersion": "v1",
+            "timeout": "10000"
+          }
+        }
+      }
+    }
+    ```
+
+    <Info>
+      The `defaultEnvironment` is used when you don't specify an environment explicitly.
+    </Info>
+  </Step>
+
+  <Step title="Create environment-specific .env files">
+    Create separate `.env` files for each environment:
+
+    <CodeGroup>
+
+    ```bash .env (dev)
+    # Development environment variables
+    API_KEY=sk_test_dev_1234567890
+    DATABASE_URL=postgresql://localhost:5432/myapp_dev
+    DEBUG=true
+    ```
+
+    ```bash .env.staging
+    # Staging environment variables
+    API_KEY=sk_test_staging_abcdefghij
+    DATABASE_URL=postgresql://staging-db.example.com:5432/myapp_staging
+    DEBUG=true
+    ```
+
+    ```bash .env.prod
+    # Production environment variables
+    API_KEY=sk_live_prod_xyz987654321
+    DATABASE_URL=postgresql://prod-db.example.com:5432/myapp_prod
+    DEBUG=false
+    ```
+
+    </CodeGroup>
+
+    <Warning>
+      Keep your production `.env.prod` file secure and never commit it to version control.
+    </Warning>
+  </Step>
+
+  <Step title="Create environment-agnostic requests">
+    Write your requests using variables that work across all environments:
+
+    ```json requests/get-users.json
+    {
+      "name": "Get Users",
+      "method": "GET",
+      "url": "{{baseUrl}}/api/{{apiVersion}}/users",
+      "headers": {
+        "Authorization": "Bearer {{API_KEY}}",
+        "Accept": "application/json"
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Run requests in different environments">
+    Execute the same request file in different environments:
+
+    ```bash
+    # Run in dev (default environment)
+    mailman run requests/get-users.json
+
+    # Run in staging
+    mailman run requests/get-users.json --env staging
+
+    # Run in production
+    mailman run requests/get-users.json --env prod
+    ```
+
+    Each command uses the appropriate `baseUrl`, `apiVersion`, and `API_KEY` for that environment.
+  </Step>
+</Steps>
+
+## Real-World Example
+
+Let's walk through a complete example of testing a payment API across environments.
+
+### Project Structure
+
+```
+my-payment-api/
+├── config.json
+├── .env
+├── .env.staging
+├── .env.prod
+└── requests/
+    ├── create-payment.json
+    ├── get-payment.json
+    └── refund-payment.json
+```
+
+### Configuration Files
+
+<CodeGroup>
+
+```json config.json
+{
+  "defaultEnvironment": "dev",
+  "environments": {
+    "dev": {
+      "variables": {
+        "baseUrl": "http://localhost:4000",
+        "webhookUrl": "https://webhook.site/dev-test",
+        "currency": "USD",
+        "testMode": "true"
+      }
+    },
+    "staging": {
+      "variables": {
+        "baseUrl": "https://staging-payments.example.com",
+        "webhookUrl": "https://staging.example.com/webhooks/payment",
+        "currency": "USD",
+        "testMode": "true"
+      }
+    },
+    "prod": {
+      "variables": {
+        "baseUrl": "https://payments.example.com",
+        "webhookUrl": "https://example.com/webhooks/payment",
+        "currency": "USD",
+        "testMode": "false"
+      }
+    }
+  }
+}
+```
+
+```bash .env
+API_KEY=sk_test_local_12345
+API_SECRET=secret_test_abcde
+MERCHANT_ID=merchant_dev_001
+```
+
+```bash .env.staging
+API_KEY=sk_test_staging_67890
+API_SECRET=secret_staging_fghij
+MERCHANT_ID=merchant_staging_002
+```
+
+```bash .env.prod
+API_KEY=sk_live_prod_xyz123
+API_SECRET=secret_prod_klmno
+MERCHANT_ID=merchant_prod_999
+```
+
+</CodeGroup>
+
+### Request Files
+
+<CodeGroup>
+
+```json requests/create-payment.json
+{
+  "name": "Create Payment",
+  "method": "POST",
+  "url": "{{baseUrl}}/v1/payments",
+  "headers": {
+    "Authorization": "Bearer {{API_KEY}}",
+    "X-Merchant-ID": "{{MERCHANT_ID}}",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "amount": 1000,
+    "currency": "{{currency}}",
+    "description": "Test payment",
+    "webhookUrl": "{{webhookUrl}}",
+    "testMode": "{{testMode}}"
+  }
+}
+```
+
+```json requests/get-payment.json
+{
+  "name": "Get Payment",
+  "method": "GET",
+  "url": "{{baseUrl}}/v1/payments/{{paymentId}}",
+  "headers": {
+    "Authorization": "Bearer {{API_KEY}}",
+    "X-Merchant-ID": "{{MERCHANT_ID}}",
+    "Accept": "application/json"
+  },
+  "defaultValues": {
+    "paymentId": "pay_123456789"
+  }
+}
+```
+
+```json requests/refund-payment.json
+{
+  "name": "Refund Payment",
+  "method": "POST",
+  "url": "{{baseUrl}}/v1/payments/{{paymentId}}/refund",
+  "headers": {
+    "Authorization": "Bearer {{API_KEY}}",
+    "X-Merchant-ID": "{{MERCHANT_ID}}",
+    "X-Idempotency-Key": "{{idempotencyKey}}",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "amount": 1000,
+    "reason": "customer_request"
+  },
+  "defaultValues": {
+    "paymentId": "pay_123456789",
+    "idempotencyKey": "refund_001"
+  }
+}
+```
+
+</CodeGroup>
+
+### Testing Workflow
+
+```bash
+# 1. Test locally during development
+mailman run requests/create-payment.json
+# Uses: http://localhost:4000, sk_test_local_12345
+
+# 2. Test in staging before deploying
+mailman run requests/create-payment.json --env staging
+# Uses: https://staging-payments.example.com, sk_test_staging_67890
+
+# 3. Verify in production (carefully!)
+mailman run requests/get-payment.json --env prod
+# Uses: https://payments.example.com, sk_live_prod_xyz123
+```
+
+## Environment-Specific Features
+
+### Cookie Groups per Environment
+
+You can define different cookies for each environment:
+
+```json config.json
+{
+  "defaultEnvironment": "dev",
+  "environments": {
+    "dev": {
+      "variables": {
+        "baseUrl": "http://localhost:3000"
+      },
+      "cookies": [
+        {
+          "name": "dev-session",
+          "cookies": {
+            "sessionId": "dev_session_123",
+            "userId": "dev_user_456"
+          }
+        }
+      ]
+    },
+    "prod": {
+      "variables": {
+        "baseUrl": "https://api.example.com"
+      },
+      "cookies": [
+        {
+          "name": "prod-session",
+          "cookies": {
+            "sessionId": "prod_session_xyz",
+            "userId": "prod_user_789"
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+### Viewing Current Environment
+
+When you run a request, Mailman shows which environment is active:
+
+```bash
+$ mailman run requests/get-users.json --env staging
+
+Running: Get Users
+Environment: staging
+GET https://staging-api.example.com/api/v1/users
+
+Status: 200 OK
+...
+```
+
+## Advanced Patterns
+
+### Shared Variables Across Environments
+
+Some variables might be the same across all environments:
+
+```json config.json
+{
+  "defaultEnvironment": "dev",
+  "environments": {
+    "dev": {
+      "variables": {
+        "baseUrl": "http://localhost:3000",
+        "apiVersion": "v2",
+        "rateLimitPerMinute": "100",
+        "maxRetries": "3"
+      }
+    },
+    "prod": {
+      "variables": {
+        "baseUrl": "https://api.example.com",
+        "apiVersion": "v2",
+        "rateLimitPerMinute": "1000",
+        "maxRetries": "3"
+      }
+    }
+  }
+}
+```
+
+### Feature Flags per Environment
+
+Use variables as feature flags:
+
+```json config.json
+{
+  "defaultEnvironment": "dev",
+  "environments": {
+    "dev": {
+      "variables": {
+        "baseUrl": "http://localhost:3000",
+        "enableBetaFeatures": "true",
+        "enableDebugLogs": "true"
+      }
+    },
+    "prod": {
+      "variables": {
+        "baseUrl": "https://api.example.com",
+        "enableBetaFeatures": "false",
+        "enableDebugLogs": "false"
+      }
+    }
+  }
+}
+```
+
+Use in requests:
+
+```json requests/beta-feature.json
+{
+  "name": "Test Beta Feature",
+  "method": "POST",
+  "url": "{{baseUrl}}/api/beta/new-feature",
+  "headers": {
+    "Authorization": "Bearer {{API_KEY}}",
+    "X-Enable-Beta": "{{enableBetaFeatures}}"
+  },
+  "body": {
+    "data": "test"
+  }
+}
+```
+
+## Tips and Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use descriptive environment names">
+    Choose clear names like `dev`, `staging`, `prod` instead of `env1`, `env2`. You can also use `local`, `test`, `qa`, or `production`.
+  </Accordion>
+
+  <Accordion title="Keep .env files in sync">
+    Ensure all `.env` files have the same variable names (but different values). This prevents errors when switching environments.
+  </Accordion>
+
+  <Accordion title="Document environment differences">
+    Create a README that documents what makes each environment different (database, external services, feature flags, etc.).
+  </Accordion>
+
+  <Accordion title="Test in lower environments first">
+    Always test in `dev` → `staging` → `prod` order. Never skip staging when making changes.
+  </Accordion>
+
+  <Accordion title="Use separate credentials">
+    Never reuse the same API keys or credentials across environments. Each environment should have its own isolated credentials.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Variables not being replaced">
+    Make sure:
+    - Variable names match exactly (case-sensitive)
+    - The variable exists in the environment you're using
+    - Your `.env` file is in the project root
+    - You're using the correct environment with `--env`
+  </Accordion>
+
+  <Accordion title="Wrong environment being used">
+    Check your `defaultEnvironment` in `config.json`. If you want to use a different environment, explicitly specify it with `--env`.
+  </Accordion>
+
+  <Accordion title=".env file not found">
+    For non-default environments, ensure the file is named correctly:
+    - Development (default): `.env`
+    - Staging: `.env.staging`
+    - Production: `.env.prod`
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Variables" icon="brackets-curly" href="/concepts/variables">
+    Learn more about variable interpolation
+  </Card>
+  <Card title="Configuration" icon="gear" href="/guides/configuration">
+    Explore advanced configuration options
+  </Card>
+</CardGroup>

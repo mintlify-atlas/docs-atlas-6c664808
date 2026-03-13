@@ -1,0 +1,409 @@
+---
+title: Environment Files
+description: Master .env file usage in Mailman for managing secrets, environment-specific variables, and configuration overrides.
+---
+
+# Environment Files
+
+Mailman uses `.env` files to store environment-specific variables and secrets that should never be committed to version control. This guide covers how Mailman loads and uses these files.
+
+## File Naming Convention
+
+Mailman automatically loads `.env` files based on the selected environment:
+
+- **Default environment**: `.env`
+- **Named environment**: `.env.<environment>`
+
+### Example Structure
+
+```
+my-project/
+├── config.json
+├── .env                 # Loaded for default environment
+├── .env.dev            # Loaded when using -e dev
+├── .env.staging        # Loaded when using -e staging
+├── .env.prod           # Loaded when using -e prod
+└── requests/
+    └── get-users.json
+```
+
+## How Environment Files Are Loaded
+
+From the Mailman source code in `src/commands/run.ts:94-114`:
+
+```typescript src/commands/run.ts
+const { variables, cookies } = getEnvironmentObject(config, options?.env);
+let envFile = ".env";
+if (options?.env && config.defaultEnvironment !== options?.env) {
+  envFile += `.${options.env}`;
+}
+const envPath = path.join(getConfigDir(), envFile);
+const envs = dotenv.config({ path: envPath }).parsed;
+```
+
+### Loading Logic
+
+1. If no environment is specified (`-e` flag), loads `.env`
+2. If environment is specified and differs from default, loads `.env.<environment>`
+3. File is loaded from the same directory as `config.json`
+4. Variables are parsed using the `dotenv` library
+
+<Note>
+Mailman uses the [dotenv](https://www.npmjs.com/package/dotenv) package to parse `.env` files.
+</Note>
+
+## File Format
+
+Environment files use the standard `.env` format:
+
+```bash .env
+# API Configuration
+API_KEY=sk_live_1234567890abcdef
+API_SECRET=secret_xyz789abc456
+
+# Base URLs
+baseUrl=http://localhost:3000
+
+# Authentication
+BEARER_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+USER_ID=admin@example.com
+
+# Feature Flags
+ENABLE_DEBUG=true
+```
+
+### Syntax Rules
+
+- One variable per line
+- Format: `KEY=value`
+- No quotes needed (but supported)
+- Comments start with `#`
+- Empty lines are ignored
+- No spaces around `=`
+
+## Environment-Specific Files
+
+Create separate files for each environment with different values:
+
+### Development Environment
+
+```bash .env.dev
+API_KEY=dev_key_123
+baseUrl=http://localhost:3000
+DATABASE_URL=postgresql://localhost:5432/myapp_dev
+LOG_LEVEL=debug
+```
+
+### Staging Environment
+
+```bash .env.staging
+API_KEY=staging_key_456
+baseUrl=https://staging-api.example.com
+DATABASE_URL=postgresql://staging-db.example.com:5432/myapp
+LOG_LEVEL=info
+```
+
+### Production Environment
+
+```bash .env.prod
+API_KEY=prod_key_789
+baseUrl=https://api.example.com
+DATABASE_URL=postgresql://prod-db.example.com:5432/myapp
+LOG_LEVEL=error
+```
+
+## Using Environment Variables
+
+Variables from `.env` files are automatically available for interpolation:
+
+```json requests/api-request.json
+{
+  "name": "Fetch Data",
+  "method": "GET",
+  "url": "{{baseUrl}}/api/data",
+  "headers": {
+    "Authorization": "Bearer {{BEARER_TOKEN}}",
+    "X-API-Key": "{{API_KEY}}"
+  }
+}
+```
+
+Run with different environments:
+
+```bash
+# Uses .env
+mailman run requests/api-request.json
+
+# Uses .env.staging
+mailman run requests/api-request.json -e staging
+
+# Uses .env.prod
+mailman run requests/api-request.json -e prod
+```
+
+## Variable Resolution Priority
+
+Environment file variables are merged with other sources. From `src/commands/run.ts:105-118`:
+
+```typescript src/commands/run.ts
+if (request?.defaultValues) {
+  for (const [key, value] of Object.entries(request?.defaultValues)) {
+    variables[key] = value;
+  }
+}
+if (envs) {
+  for (const [key, value] of Object.entries(envs)) {
+    variables[key] = value;
+  }
+}
+for (const v of options?.var ?? []) {
+  const [key, ...rest] = v.split("=");
+  variables[key] = rest.join("=");
+}
+```
+
+### Priority Order (highest to lowest):
+
+1. **CLI flags** (`--var KEY=value`)
+2. **`.env` file** (environment-specific)
+3. **Request `defaultValues`**
+4. **`config.json` environment variables**
+
+See [Variable Resolution](/guides/variable-resolution) for complete details.
+
+## Security Best Practices
+
+<Steps>
+  <Step title="Add .env files to .gitignore">
+    Never commit environment files containing secrets:
+
+    ```bash .gitignore
+    # Environment files
+    .env
+    .env.*
+    .env.local
+    ```
+  </Step>
+  <Step title="Create .env.example template">
+    Commit a template file with dummy values:
+
+    ```bash .env.example
+    API_KEY=your_api_key_here
+    API_SECRET=your_secret_here
+    baseUrl=http://localhost:3000
+    BEARER_TOKEN=your_token_here
+    ```
+
+    Team members can copy this to create their own `.env` files.
+  </Step>
+  <Step title="Use strong secrets">
+    - Generate cryptographically secure tokens
+    - Rotate credentials regularly
+    - Use different credentials per environment
+    - Never share production credentials
+  </Step>
+</Steps>
+
+## Common Patterns
+
+### Pattern 1: Shared Base with Overrides
+
+Use `.env` for common variables, `.env.<env>` for overrides:
+
+```bash .env
+# Shared across all environments
+CONTENT_TYPE=application/json
+API_VERSION=v2
+TIMEOUT=30000
+```
+
+```bash .env.prod
+# Production overrides
+baseUrl=https://api.example.com
+API_KEY=prod_key_xyz
+```
+
+### Pattern 2: Complete Separation
+
+Define all variables independently per environment:
+
+```bash .env.dev
+baseUrl=http://localhost:3000
+API_KEY=dev_key
+DEBUG=true
+```
+
+```bash .env.prod
+baseUrl=https://api.example.com
+API_KEY=prod_key
+DEBUG=false
+```
+
+### Pattern 3: Team Defaults + Local Overrides
+
+Commit `.env.dev.example`, use `.env.dev.local` for personal settings:
+
+```bash .env.dev.example
+baseUrl=http://localhost:3000
+API_KEY=shared_dev_key
+```
+
+```bash .env.dev.local
+# Your personal overrides (not committed)
+baseUrl=http://localhost:8080
+API_KEY=my_personal_dev_key
+```
+
+Update your `.gitignore`:
+
+```bash .gitignore
+.env
+.env.*
+!.env.*.example
+```
+
+## Example: Multi-Environment Setup
+
+<Steps>
+  <Step title="Create config.json">
+    ```json config.json
+    {
+      "defaultEnvironment": "dev",
+      "environments": {
+        "dev": {
+          "variables": {
+            "environment": "development"
+          }
+        },
+        "staging": {
+          "variables": {
+            "environment": "staging"
+          }
+        },
+        "prod": {
+          "variables": {
+            "environment": "production"
+          }
+        }
+      }
+    }
+    ```
+  </Step>
+  <Step title="Create environment files">
+    ```bash .env.dev
+    API_KEY=dev_sk_123abc
+    baseUrl=http://localhost:3000
+    ```
+
+    ```bash .env.staging
+    API_KEY=staging_sk_456def
+    baseUrl=https://staging-api.example.com
+    ```
+
+    ```bash .env.prod
+    API_KEY=prod_sk_789ghi
+    baseUrl=https://api.example.com
+    ```
+  </Step>
+  <Step title="Create request">
+    ```json requests/check-status.json
+    {
+      "name": "Check API Status",
+      "method": "GET",
+      "url": "{{baseUrl}}/status",
+      "headers": {
+        "X-API-Key": "{{API_KEY}}",
+        "X-Environment": "{{environment}}"
+      }
+    }
+    ```
+  </Step>
+  <Step title="Run in different environments">
+    ```bash
+    # Development (uses .env.dev)
+    mailman run requests/check-status.json -e dev
+
+    # Staging (uses .env.staging)
+    mailman run requests/check-status.json -e staging
+
+    # Production (uses .env.prod)
+    mailman run requests/check-status.json -e prod
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Variables Not Loading
+
+<AccordionGroup>
+  <Accordion title="Check file location">
+    Ensure `.env` files are in the same directory as `config.json`:
+
+    ```bash
+    # Find config directory
+    mailman run requests/test.json
+    # Look for: "Environment: <name>"
+
+    # Verify .env file exists
+    ls -la .env*
+    ```
+  </Accordion>
+  <Accordion title="Check file naming">
+    File names must match exactly:
+    - `.env` for default
+    - `.env.<environment>` for named environments
+
+    Common mistakes:
+    - `.env.development` when environment is named `dev`
+    - Extra spaces or characters
+    - Wrong file extension
+  </Accordion>
+  <Accordion title="Check syntax">
+    Ensure proper `.env` syntax:
+    - No spaces around `=`
+    - No quotes (or matched quotes)
+    - Unix line endings (LF, not CRLF)
+
+    ```bash
+    # Good
+    API_KEY=value
+
+    # Bad
+    API_KEY = value
+    API KEY=value
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Environment-Specific File Not Loading
+
+If `.env.prod` isn't loading:
+
+1. Verify environment name in `config.json`:
+   ```json
+   "environments": {
+     "prod": { ... }  // Must match exactly
+   }
+   ```
+
+2. Use correct flag:
+   ```bash
+   mailman run requests/test.json -e prod
+   ```
+
+3. Check if environment is the default (loads `.env` instead):
+   ```json
+   "defaultEnvironment": "prod"  // Uses .env, not .env.prod
+   ```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Variable Resolution" icon="brackets-curly" href="/guides/variable-resolution">
+    Understand how Mailman merges variables from multiple sources
+  </Card>
+  <Card title="Configuration" icon="gear" href="/guides/configuration">
+    Learn more about config.json and environment setup
+  </Card>
+</CardGroup>

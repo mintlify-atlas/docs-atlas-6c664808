@@ -1,0 +1,342 @@
+---
+title: 'Authentication Examples'
+description: 'Learn how to authenticate your API requests with various methods'
+icon: 'lock'
+---
+
+This guide shows you how to handle authentication in Mailman using different authentication methods.
+
+## Bearer Token Authentication
+
+The most common authentication method for modern APIs is Bearer token authentication.
+
+<Steps>
+  <Step title="Store your API key in .env file">
+    Create a `.env` file in your project root to store sensitive credentials:
+
+    ```bash .env
+    API_KEY=sk_test_1234567890abcdef
+    USER_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+    ```
+
+    <Warning>
+      Never commit `.env` files to version control. Add `.env` to your `.gitignore` file.
+    </Warning>
+  </Step>
+
+  <Step title="Create an authenticated request">
+    Reference the environment variable in your request using `{{API_KEY}}`:
+
+    ```json requests/get-protected-users.json
+    {
+      "name": "Get Protected Users",
+      "method": "GET",
+      "url": "{{baseUrl}}/api/users",
+      "headers": {
+        "Authorization": "Bearer {{API_KEY}}",
+        "Accept": "application/json"
+      }
+    }
+    ```
+
+    Mailman automatically loads variables from your `.env` file and replaces `{{API_KEY}}` with the actual value.
+  </Step>
+
+  <Step title="Run the authenticated request">
+    ```bash
+    mailman run requests/get-protected-users.json
+    ```
+
+    Output:
+    ```bash
+    Running: Get Protected Users
+    Environment: dev
+    GET http://localhost:3000/api/users
+
+    Status: 200 OK
+    Time: 156ms
+
+    Response Headers:
+      content-type: application/json
+      x-ratelimit-limit: 100
+      x-ratelimit-remaining: 99
+
+    Response Body:
+    {
+      "users": [...],
+      "authenticated": true
+    }
+    ```
+  </Step>
+</Steps>
+
+## API Key in Header
+
+Some APIs use custom header names for API keys:
+
+<CodeGroup>
+
+```json requests/get-weather.json
+{
+  "name": "Get Weather Data",
+  "method": "GET",
+  "url": "{{baseUrl}}/weather?city={{city}}",
+  "headers": {
+    "X-API-Key": "{{WEATHER_API_KEY}}",
+    "Accept": "application/json"
+  },
+  "defaultValues": {
+    "city": "San Francisco"
+  }
+}
+```
+
+```bash .env
+WEATHER_API_KEY=abc123xyz789
+```
+
+</CodeGroup>
+
+## Basic Authentication
+
+For APIs using HTTP Basic Authentication:
+
+<CodeGroup>
+
+```json requests/basic-auth-example.json
+{
+  "name": "Basic Auth Request",
+  "method": "GET",
+  "url": "{{baseUrl}}/api/protected",
+  "headers": {
+    "Authorization": "Basic {{BASIC_AUTH_TOKEN}}",
+    "Accept": "application/json"
+  }
+}
+```
+
+```bash .env
+# Base64 encode your username:password
+# For username "admin" and password "secret123":
+BASIC_AUTH_TOKEN=YWRtaW46c2VjcmV0MTIz
+```
+
+</CodeGroup>
+
+<Info>
+  To generate a Basic Auth token, use: `echo -n "username:password" | base64`
+</Info>
+
+## OAuth 2.0 Access Token
+
+For OAuth 2.0 authenticated APIs:
+
+<Steps>
+  <Step title="Obtain your access token">
+    First, get your OAuth access token from your provider's authentication flow. Store it in `.env`:
+
+    ```bash .env
+    OAUTH_ACCESS_TOKEN=ya29.a0AfH6SMBx...
+    OAUTH_REFRESH_TOKEN=1//0gZ9x...
+    ```
+  </Step>
+
+  <Step title="Create authenticated requests">
+    ```json requests/oauth-get-profile.json
+    {
+      "name": "Get User Profile (OAuth)",
+      "method": "GET",
+      "url": "{{baseUrl}}/v1/users/me",
+      "headers": {
+        "Authorization": "Bearer {{OAUTH_ACCESS_TOKEN}}",
+        "Accept": "application/json"
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Multiple Authentication Methods
+
+Some APIs require multiple authentication headers:
+
+```json requests/multi-auth.json
+{
+  "name": "Multi-Auth Request",
+  "method": "POST",
+  "url": "{{baseUrl}}/api/v1/transactions",
+  "headers": {
+    "Authorization": "Bearer {{API_KEY}}",
+    "X-Client-ID": "{{CLIENT_ID}}",
+    "X-Client-Secret": "{{CLIENT_SECRET}}",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "amount": 100.00,
+    "currency": "USD"
+  }
+}
+```
+
+With corresponding `.env` file:
+
+```bash .env
+API_KEY=sk_live_1234567890
+CLIENT_ID=client_abc123
+CLIENT_SECRET=secret_xyz789
+```
+
+## Per-Environment Authentication
+
+Use different credentials for different environments:
+
+<CodeGroup>
+
+```json config.json
+{
+  "defaultEnvironment": "dev",
+  "environments": {
+    "dev": {
+      "variables": {
+        "baseUrl": "http://localhost:3000"
+      }
+    },
+    "staging": {
+      "variables": {
+        "baseUrl": "https://staging-api.example.com"
+      }
+    },
+    "prod": {
+      "variables": {
+        "baseUrl": "https://api.example.com"
+      }
+    }
+  }
+}
+```
+
+```bash .env (dev)
+API_KEY=sk_test_dev123456
+```
+
+```bash .env.staging
+API_KEY=sk_test_staging789
+```
+
+```bash .env.prod
+API_KEY=sk_live_prod987654
+```
+
+</CodeGroup>
+
+Run requests with different environment credentials:
+
+```bash
+# Uses .env (dev environment)
+mailman run requests/get-protected-users.json
+
+# Uses .env.staging
+mailman run requests/get-protected-users.json --env staging
+
+# Uses .env.prod
+mailman run requests/get-protected-users.json --env prod
+```
+
+## Cookie-Based Authentication
+
+For session-based authentication using cookies:
+
+<Steps>
+  <Step title="Configure cookie groups in config.json">
+    ```json config.json
+    {
+      "defaultEnvironment": "dev",
+      "environments": {
+        "dev": {
+          "variables": {
+            "baseUrl": "http://localhost:3000"
+          },
+          "cookies": [
+            {
+              "name": "session",
+              "cookies": {
+                "sessionId": "abc123xyz789",
+                "userId": "user_456"
+              }
+            }
+          ]
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Enable cookies in your request">
+    ```json requests/session-request.json
+    {
+      "name": "Get Session Data",
+      "method": "GET",
+      "url": "{{baseUrl}}/api/session",
+      "cookies": true,
+      "headers": {
+        "Accept": "application/json"
+      }
+    }
+    ```
+
+    <Info>
+      Set `"cookies": true` to enable automatic cookie injection from your environment configuration.
+    </Info>
+  </Step>
+</Steps>
+
+## Override Authentication at Runtime
+
+You can override authentication tokens when running requests:
+
+```bash
+# Override API key for a single request
+mailman run requests/get-protected-users.json --var API_KEY="sk_test_override123"
+
+# Override multiple authentication variables
+mailman run requests/multi-auth.json \
+  --var API_KEY="new_key" \
+  --var CLIENT_ID="new_client" \
+  --var CLIENT_SECRET="new_secret"
+```
+
+## Security Best Practices
+
+<AccordionGroup>
+  <Accordion title="Store credentials securely">
+    - Always use `.env` files for sensitive data
+    - Never hardcode credentials in request files
+    - Add `.env*` to your `.gitignore`
+    - Use different credentials for each environment
+  </Accordion>
+
+  <Accordion title="Use environment-specific tokens">
+    - Use test/sandbox tokens for development
+    - Use separate tokens for staging and production
+    - Rotate production tokens regularly
+    - Limit token permissions to minimum required
+  </Accordion>
+
+  <Accordion title="Handle token expiration">
+    - Be aware of token expiration times
+    - Implement token refresh flows when needed
+    - Store refresh tokens securely
+    - Monitor API responses for 401 Unauthorized errors
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Multiple Environments" icon="layer-group" href="/examples/multiple-environments">
+    Learn how to manage different environments
+  </Card>
+  <Card title="Variables" icon="brackets-curly" href="/concepts/variables">
+    Deep dive into variable interpolation
+  </Card>
+</CardGroup>

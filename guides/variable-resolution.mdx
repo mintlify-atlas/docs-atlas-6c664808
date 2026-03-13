@@ -1,0 +1,487 @@
+---
+title: Variable Resolution
+description: Understand how Mailman resolves variables from multiple sources with clear priority rules and override capabilities.
+---
+
+# Variable Resolution
+
+Mailman variables can come from multiple sources: config files, environment files, request defaults, CLI flags, and interactive prompts. This guide explains exactly how these sources are prioritized and merged.
+
+## Variable Sources
+
+Mailman resolves variables from five sources, in priority order:
+
+1. **CLI flags** (`--var KEY=value`)
+2. **Environment files** (`.env` or `.env.<environment>`)
+3. **Request default values** (`defaultValues` in request JSON)
+4. **Config environment variables** (`config.json` environment)
+5. **Interactive prompts** (for unfilled variables)
+
+<Note>
+Higher priority sources override lower priority sources. For example, a CLI flag overrides all other sources.
+</Note>
+
+## Priority Order Explained
+
+From the Mailman source code in `src/commands/run.ts:94-127`:
+
+```typescript src/commands/run.ts
+const { variables, cookies } = getEnvironmentObject(config, options?.env);
+let envFile = ".env";
+if (options?.env && config.defaultEnvironment !== options?.env) {
+  envFile += `.${options.env}`;
+}
+const envPath = path.join(getConfigDir(), envFile);
+const envs = dotenv.config({ path: envPath }).parsed;
+
+// Priority 3: Request defaults
+if (request?.defaultValues) {
+  for (const [key, value] of Object.entries(request?.defaultValues)) {
+    variables[key] = value;
+  }
+}
+
+// Priority 2: Environment file
+if (envs) {
+  for (const [key, value] of Object.entries(envs)) {
+    variables[key] = value;
+  }
+}
+
+// Priority 1: CLI flags
+for (const v of options?.var ?? []) {
+  const [key, ...rest] = v.split("=");
+  variables[key] = rest.join("=");
+}
+
+let resolved = resolveRequest(request, variables);
+const unfilledVariables = findUnfilledVariablesInObject(resolved);
+if (unfilledVariables.length > 0) {
+  const filledVariables = await fillUnfilledVariables(unfilledVariables);
+  for (const [key, value] of Object.entries(filledVariables)) {
+    variables[key] = value;
+  }
+  resolved = resolveRequest(request, variables);
+}
+```
+
+### How Variables Are Merged
+
+<Steps>
+  <Step title="Start with config.json environment">
+    Load base variables from the selected environment in `config.json`:
+
+    ```json config.json
+    {
+      "environments": {
+        "dev": {
+          "variables": {
+            "baseUrl": "http://localhost:3000",
+            "apiVersion": "v1"
+          }
+        }
+      }
+    }
+    ```
+
+    Initial variables:
+    ```json
+    {
+      "baseUrl": "http://localhost:3000",
+      "apiVersion": "v1"
+    }
+    ```
+  </Step>
+  <Step title="Merge request defaultValues">
+    Apply defaults from the request file:
+
+    ```json requests/get-users.json
+    {
+      "name": "Get Users",
+      "method": "GET",
+      "url": "{{baseUrl}}/{{apiVersion}}/users",
+      "defaultValues": {
+        "apiVersion": "v2",
+        "limit": "10"
+      }
+    }
+    ```
+
+    Merged variables:
+    ```json
+    {
+      "baseUrl": "http://localhost:3000",
+      "apiVersion": "v2",  // Overridden
+      "limit": "10"        // Added
+    }
+    ```
+  </Step>
+  <Step title="Merge .env file">
+    Apply variables from environment file:
+
+    ```bash .env.dev
+    baseUrl=http://localhost:8080
+    API_KEY=dev_key_123
+    ```
+
+    Merged variables:
+    ```json
+    {
+      "baseUrl": "http://localhost:8080",  // Overridden
+      "apiVersion": "v2",
+      "limit": "10",
+      "API_KEY": "dev_key_123"            // Added
+    }
+    ```
+  </Step>
+  <Step title="Merge CLI flags">
+    Apply runtime overrides:
+
+    ```bash
+    mailman run requests/get-users.json -e dev --var limit=50
+    ```
+
+    Final variables:
+    ```json
+    {
+      "baseUrl": "http://localhost:8080",
+      "apiVersion": "v2",
+      "limit": "50",        // Overridden
+      "API_KEY": "dev_key_123"
+    }
+    ```
+  </Step>
+</Steps>
+
+## Interactive Prompts
+
+If any variable remains unfilled after all sources are merged, Mailman prompts you:
+
+```json requests/create-user.json
+{
+  "name": "Create User",
+  "method": "POST",
+  "url": "{{baseUrl}}/users",
+  "body": {
+    "name": "{{USER_NAME}}",
+    "email": "{{USER_EMAIL}}"
+  }
+}
+```
+
+Running without defining `USER_NAME` or `USER_EMAIL`:
+
+```bash
+mailman run requests/create-user.json
+
+Fill variable value for USER_NAME: John Doe
+Fill variable value for USER_EMAIL: john@example.com
+
+Running: Create User
+Environment: dev
+POST http://localhost:3000/users
+...
+```
+
+This is implemented in `src/utils/variables.ts:22-38`:
+
+```typescript src/utils/variables.ts
+export async function fillUnfilledVariables(
+  unfilledVariables: string[],
+): Promise<Record<string, string>> {
+  const unfilledVariablesFiltered = [...new Set(unfilledVariables)];
+  const filledVarRecord: Record<string, string> = {};
+  for (const unfilledVar of unfilledVariablesFiltered) {
+    const response = await prompts({
+      type: "text",
+      name: "value",
+      message: `Fill variable value for ${unfilledVar}`,
+    });
+    if (typeof response.value === "string") {
+      filledVarRecord[unfilledVar] = response.value;
+    }
+  }
+  return filledVarRecord;
+}
+```
+
+## Variable Interpolation
+
+Variables are interpolated using `{{variableName}}` syntax. From `src/utils/variables.ts:39-49`:
+
+```typescript src/utils/variables.ts
+export function interpolate(template: string, variables: Variables): string {
+  return template.replace(
+    /\{\{(\w+)\}\}/g,
+    (match: string, key: string): string => {
+      if (Object.prototype.hasOwnProperty.call(variables, key)) {
+        return variables[key];
+      }
+      return match;
+    },
+  );
+}
+```
+
+### Interpolation Rules
+
+- Pattern: `{{variableName}}`
+- Variable names must be word characters (`\w+`: letters, digits, underscore)
+- If variable is found, it's replaced with its value
+- If variable is not found, the placeholder remains (triggering a prompt later)
+
+### Deep Interpolation
+
+Mailman interpolates variables in all request fields recursively:
+
+```json requests/complex.json
+{
+  "name": "Complex Request",
+  "method": "POST",
+  "url": "{{baseUrl}}/{{apiVersion}}/{{resource}}",
+  "headers": {
+    "Authorization": "Bearer {{TOKEN}}",
+    "X-Client-ID": "{{CLIENT_ID}}"
+  },
+  "body": {
+    "user": {
+      "name": "{{USER_NAME}}",
+      "email": "{{USER_EMAIL}}"
+    },
+    "metadata": {
+      "source": "{{SOURCE}}",
+      "timestamp": "{{TIMESTAMP}}"
+    }
+  }
+}
+```
+
+All `{{...}}` patterns are replaced, regardless of nesting level.
+
+## Common Scenarios
+
+### Scenario 1: Team Defaults + Personal Overrides
+
+**Setup:**
+```json config.json
+{
+  "defaultEnvironment": "dev",
+  "environments": {
+    "dev": {
+      "variables": {
+        "baseUrl": "http://localhost:3000"
+      }
+    }
+  }
+}
+```
+
+```bash .env
+API_KEY=team_shared_key
+```
+
+**Override for personal testing:**
+```bash
+mailman run requests/test.json --var API_KEY=my_personal_key
+```
+
+**Result:**
+- `baseUrl`: `http://localhost:3000` (from config)
+- `API_KEY`: `my_personal_key` (from CLI flag, overriding .env)
+
+### Scenario 2: Request-Specific Defaults
+
+**Request with defaults:**
+```json requests/paginated-list.json
+{
+  "name": "Paginated List",
+  "method": "GET",
+  "url": "{{baseUrl}}/items?page={{page}}&limit={{limit}}",
+  "defaultValues": {
+    "page": "1",
+    "limit": "20"
+  }
+}
+```
+
+**Run with override:**
+```bash
+mailman run requests/paginated-list.json --var page=5
+```
+
+**Result:**
+- `page`: `5` (from CLI, overriding default)
+- `limit`: `20` (from request default)
+
+### Scenario 3: Environment-Specific Secrets
+
+**Config:**
+```json config.json
+{
+  "defaultEnvironment": "dev",
+  "environments": {
+    "dev": {
+      "variables": {
+        "baseUrl": "http://localhost:3000",
+        "environment": "development"
+      }
+    },
+    "prod": {
+      "variables": {
+        "baseUrl": "https://api.example.com",
+        "environment": "production"
+      }
+    }
+  }
+}
+```
+
+**Environment files:**
+```bash .env.dev
+API_KEY=dev_key_123
+```
+
+```bash .env.prod
+API_KEY=prod_key_xyz
+```
+
+**Run:**
+```bash
+# Development
+mailman run requests/api-call.json -e dev
+# Uses: baseUrl=localhost, API_KEY=dev_key_123
+
+# Production
+mailman run requests/api-call.json -e prod
+# Uses: baseUrl=api.example.com, API_KEY=prod_key_xyz
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Config for Structure" icon="sitemap">
+    Define base URLs and environment names in `config.json` for team-wide consistency
+  </Card>
+  <Card title="Use .env for Secrets" icon="key">
+    Store API keys and tokens in `.env` files that are never committed
+  </Card>
+  <Card title="Use defaultValues Sparingly" icon="circle-exclamation">
+    Only use `defaultValues` for request-specific parameters like pagination or filters
+  </Card>
+  <Card title="Use CLI Flags for Testing" icon="terminal">
+    Override variables at runtime for quick testing without modifying files
+  </Card>
+</CardGroup>
+
+## Debugging Variable Resolution
+
+To see what variables are being used, run your request and examine the output:
+
+```bash
+mailman run requests/test.json -e dev --var DEBUG=true
+
+Running: Test Request
+Environment: dev
+GET http://localhost:3000/api/test?debug=true
+```
+
+The resolved URL shows the final interpolated values.
+
+### Viewing Request Before Execution
+
+Use the `view` command to preview the resolved request:
+
+```bash
+mailman view requests/test.json -e dev
+```
+
+This shows the fully resolved request without executing it.
+
+## Complete Example
+
+<Steps>
+  <Step title="Set up configuration">
+    ```json config.json
+    {
+      "defaultEnvironment": "dev",
+      "environments": {
+        "dev": {
+          "variables": {
+            "baseUrl": "http://localhost:3000",
+            "apiVersion": "v1"
+          }
+        },
+        "prod": {
+          "variables": {
+            "baseUrl": "https://api.example.com",
+            "apiVersion": "v2"
+          }
+        }
+      }
+    }
+    ```
+  </Step>
+  <Step title="Create environment files">
+    ```bash .env.dev
+    API_KEY=dev_sk_123
+    RATE_LIMIT=100
+    ```
+
+    ```bash .env.prod
+    API_KEY=prod_sk_xyz
+    RATE_LIMIT=1000
+    ```
+  </Step>
+  <Step title="Create request with defaults">
+    ```json requests/get-data.json
+    {
+      "name": "Get Data",
+      "method": "GET",
+      "url": "{{baseUrl}}/{{apiVersion}}/data",
+      "headers": {
+        "Authorization": "Bearer {{API_KEY}}",
+        "X-Rate-Limit": "{{RATE_LIMIT}}"
+      },
+      "defaultValues": {
+        "RATE_LIMIT": "50"
+      }
+    }
+    ```
+  </Step>
+  <Step title="Test different scenarios">
+    ```bash
+    # Scenario 1: Development with defaults
+    mailman run requests/get-data.json -e dev
+    # baseUrl: localhost:3000
+    # apiVersion: v1
+    # API_KEY: dev_sk_123 (from .env.dev)
+    # RATE_LIMIT: 100 (from .env.dev, overrides default)
+
+    # Scenario 2: Production with CLI override
+    mailman run requests/get-data.json -e prod --var RATE_LIMIT=500
+    # baseUrl: api.example.com
+    # apiVersion: v2
+    # API_KEY: prod_sk_xyz (from .env.prod)
+    # RATE_LIMIT: 500 (from CLI, highest priority)
+
+    # Scenario 3: Development without .env (uses defaults)
+    mv .env.dev .env.dev.backup
+    mailman run requests/get-data.json -e dev
+    # RATE_LIMIT: 50 (from defaultValues)
+    ```
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/guides/configuration">
+    Learn more about structuring your config.json
+  </Card>
+  <Card title="Environment Files" icon="file" href="/guides/environment-files">
+    Deep dive into .env file usage and patterns
+  </Card>
+  <Card title="Authentication" icon="shield" href="/guides/authentication">
+    See how variable resolution applies to authentication
+  </Card>
+</CardGroup>

@@ -1,0 +1,153 @@
+---
+title: 'GET Request Example'
+description: 'Learn how to make a simple GET request to fetch data from an API'
+icon: 'download'
+---
+
+This example demonstrates how to create and execute a basic GET request using Mailman.
+
+## Scenario
+
+You're building an application that needs to fetch a list of users from your REST API. You want to test the endpoint and see the response format.
+
+<Steps>
+  <Step title="Initialize your Mailman project">
+    First, create a new directory and initialize Mailman:
+
+    ```bash
+    mkdir my-api-tests
+    cd my-api-tests
+    mailman init
+    ```
+
+    This creates a `config.json` file and a `requests/` directory with sample files.
+  </Step>
+
+  <Step title="Configure your environment">
+    Update `config.json` to set your API base URL:
+
+    ```json config.json
+    {
+      "defaultEnvironment": "dev",
+      "environments": {
+        "dev": {
+          "variables": {
+            "baseUrl": "http://localhost:3000",
+            "apiVersion": "v1"
+          }
+        },
+        "prod": {
+          "variables": {
+            "baseUrl": "https://api.example.com",
+            "apiVersion": "v1"
+          }
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Create the GET request file">
+    Create a new file `requests/get-users.json`:
+
+    ```json requests/get-users.json
+    {
+      "name": "Get Users",
+      "method": "GET",
+      "url": "{{baseUrl}}/api/{{apiVersion}}/users",
+      "headers": {
+        "Accept": "application/json",
+        "User-Agent": "Mailman/1.0"
+      }
+    }
+    ```
+
+    <Note>
+      Variables like `{{baseUrl}}` and `{{apiVersion}}` are automatically replaced with values from your environment configuration.
+    </Note>
+  </Step>
+
+  <Step title="Run the request">
+    Execute the request using the Mailman CLI:
+
+    ```bash
+    mailman run requests/get-users.json
+    ```
+
+    You'll see output similar to:
+
+    ```bash
+    Running: Get Users
+    Environment: dev
+    GET http://localhost:3000/api/v1/users
+
+    Status: 200 OK
+    Time: 145ms
+
+    Response Headers:
+      content-type: application/json
+      content-length: 256
+      date: Fri, 13 Mar 2026 10:30:45 GMT
+
+    Response Body:
+    {
+      "users": [
+        {
+          "id": 1,
+          "name": "Alice Johnson",
+          "email": "alice@example.com"
+        },
+        {
+          "id": 2,
+          "name": "Bob Smith",
+          "email": "bob@example.com"
+        }
+      ],
+      "total": 2
+    }
+    ```
+  </Step>
+</Steps>
+
+## Adding Query Parameters
+
+You can also include query parameters in your GET requests:
+
+```json requests/get-users-paginated.json
+{
+  "name": "Get Users (Paginated)",
+  "method": "GET",
+  "url": "{{baseUrl}}/api/{{apiVersion}}/users?page=1&limit=10",
+  "headers": {
+    "Accept": "application/json"
+  }
+}
+```
+
+Or use variables for dynamic query parameters:
+
+```json
+{
+  "name": "Get Users (Dynamic)",
+  "method": "GET",
+  "url": "{{baseUrl}}/api/{{apiVersion}}/users?page={{page}}&limit={{limit}}",
+  "headers": {
+    "Accept": "application/json"
+  },
+  "defaultValues": {
+    "page": "1",
+    "limit": "10"
+  }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="POST Request" icon="paper-plane" href="/examples/post-request">
+    Learn how to send data with POST requests
+  </Card>
+  <Card title="Authentication" icon="lock" href="/examples/authentication">
+    Add authentication to your requests
+  </Card>
+</CardGroup>

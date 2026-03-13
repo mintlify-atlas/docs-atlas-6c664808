@@ -1,0 +1,465 @@
+---
+title: Cookies
+description: Manage authentication cookies and session data across requests
+---
+
+Cookies allow you to maintain session state and authentication across multiple requests. Mailman lets you define cookie groups per environment and automatically inject them as `Cookie` headers.
+
+## Cookie Structure
+
+Cookies are organized into named groups within environments:
+
+```typescript src/types.ts
+export interface CookieGroup {
+  name: string;
+  cookies: Record<string, string>;
+}
+
+export interface Environment {
+  variables: Variables;
+  cookies?: CookieGroup[];
+}
+```
+
+<ParamField path="name" type="string" required>
+  A human-readable name for this cookie group (e.g., "Admin Session", "User Session")
+</ParamField>
+
+<ParamField path="cookies" type="Record<string, string>" required>
+  A map of cookie names to cookie values. These will be formatted as a standard `Cookie` header
+</ParamField>
+
+## Configuration
+
+Define cookie groups in your `config.json` environments:
+
+```json config.json
+{
+  "defaultEnvironment": "dev",
+  "environments": {
+    "dev": {
+      "variables": {
+        "baseUrl": "http://localhost:3000"
+      },
+      "cookies": [
+        {
+          "name": "Admin Session",
+          "cookies": {
+            "sessionId": "dev-session-abc123",
+            "userId": "admin-user",
+            "role": "admin"
+          }
+        },
+        {
+          "name": "Regular User Session",
+          "cookies": {
+            "sessionId": "dev-session-xyz789",
+            "userId": "regular-user",
+            "role": "user"
+          }
+        }
+      ]
+    },
+    "prod": {
+      "variables": {
+        "baseUrl": "https://api.example.com"
+      },
+      "cookies": [
+        {
+          "name": "Production Session",
+          "cookies": {
+            "sessionToken": "prod-token-secure-xyz",
+            "csrf": "prod-csrf-token"
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+## Using Cookies in Requests
+
+To enable cookie injection, set `cookies: true` in your request file:
+
+```json requests/get-profile.json
+{
+  "name": "Get User Profile",
+  "method": "GET",
+  "url": "{{baseUrl}}/profile",
+  "cookies": true
+}
+```
+
+When you run this request, Mailman will:
+
+1. Check if the current environment has cookie groups
+2. Prompt you to select a group (if multiple are available)
+3. Inject the cookies as a `Cookie` header
+
+<Tabs>
+  <Tab title="Single Cookie Group">
+    If your environment has only one cookie group, it's used automatically:
+
+    ```bash
+    mailman run requests/get-profile.json
+    ```
+
+    Output:
+    ```
+    Running: Get User Profile
+    Environment: dev
+    GET http://localhost:3000/profile
+    ```
+
+    The request includes:
+    ```
+    Cookie: sessionId=dev-session-abc123; userId=admin-user; role=admin
+    ```
+  </Tab>
+
+  <Tab title="Multiple Cookie Groups">
+    If your environment has multiple cookie groups, you'll be prompted:
+
+    ```bash
+    mailman run requests/get-profile.json
+    ? select cookie
+    ❯ Admin Session
+      Regular User Session
+    ```
+
+    After selecting, the chosen cookies are injected into the request.
+  </Tab>
+
+  <Tab title="No cookies Field">
+    If your request file doesn't have `cookies: true`, no cookie injection occurs:
+
+    ```json
+    {
+      "name": "Public Endpoint",
+      "method": "GET",
+      "url": "{{baseUrl}}/public"
+      // No cookies field
+    }
+    ```
+
+    This request runs without any cookie headers.
+  </Tab>
+</Tabs>
+
+## Cookie Resolution Implementation
+
+The cookie resolution logic is in `src/utils/resolveCookieHeaders.ts`:
+
+```typescript src/utils/resolveCookieHeaders.ts
+export async function resolveCookieHeaders(
+  request: RequestFile,
+  cookies: CookieGroup[],
+): Promise<RequestFile | undefined> {
+  const choices = [];
+  if (!cookies) {
+    return undefined;
+  }
+
+  let resCookies: CookieGroup;
+  for (const cookie of cookies ?? []) {
+    choices.push({ title: cookie.name, value: cookie });
+  }
+  
+  // Prompt if multiple cookie groups
+  if (cookies.length > 1) {
+    const response = await prompts({
+      type: "select",
+      name: "cookie",
+      message: "select cookie",
+      choices,
+    });
+    if (!response.cookie) {
+      return undefined;
+    }
+    resCookies = response.cookie as CookieGroup;
+  } else {
+    resCookies = cookies[0];
+  }
+  
+  // Format cookies as "key=value; key=value"
+  let cookieStr = "";
+  for (const [key, value] of Object.entries(resCookies.cookies)) {
+    cookieStr += key + "=" + value + "; ";
+  }
+  if (cookieStr.endsWith("; ")) {
+    cookieStr = cookieStr.slice(0, -2);
+  }
+
+  // Inject Cookie header
+  if (request?.headers) {
+    request.headers["Cookie"] = cookieStr;
+  } else {
+    request.headers = {};
+    request.headers["Cookie"] = cookieStr;
+  }
+  return request;
+}
+```
+
+This function is called in the request execution flow:
+
+```typescript src/commands/run.ts:94-103
+const { variables, cookies } = getEnvironmentObject(config, options?.env);
+
+// ... load .env files ...
+
+if (cookies && request.cookies) {
+  request = (await resolveCookieHeaders(request, cookies)) || request;
+}
+```
+
+## Cookie Header Format
+
+Cookies are formatted according to the HTTP Cookie standard:
+
+```
+Cookie: name1=value1; name2=value2; name3=value3
+```
+
+For example, this cookie group:
+
+```json
+{
+  "name": "Session",
+  "cookies": {
+    "sessionId": "abc123",
+    "userId": "user456",
+    "preferences": "dark-mode"
+  }
+}
+```
+
+Becomes this header:
+
+```
+Cookie: sessionId=abc123; userId=user456; preferences=dark-mode
+```
+
+## Environment-Specific Cookies
+
+Cookie groups are environment-specific, so you can maintain different sessions for each environment:
+
+<CodeGroup>
+
+```json config.json (Development)
+{
+  "environments": {
+    "dev": {
+      "cookies": [
+        {
+          "name": "Dev Admin",
+          "cookies": {
+            "sessionId": "dev-admin-session",
+            "debug": "true"
+          }
+        },
+        {
+          "name": "Dev User",
+          "cookies": {
+            "sessionId": "dev-user-session",
+            "debug": "true"
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+```json config.json (Production)
+{
+  "environments": {
+    "prod": {
+      "cookies": [
+        {
+          "name": "Prod Session",
+          "cookies": {
+            "sessionToken": "prod-secure-token-xyz",
+            "csrf": "prod-csrf-abc",
+            "secure": "true"
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+</CodeGroup>
+
+## Working with Authentication Flows
+
+A common pattern is to have separate cookie groups for different user roles:
+
+```json config.json
+{
+  "defaultEnvironment": "dev",
+  "environments": {
+    "dev": {
+      "variables": {
+        "baseUrl": "http://localhost:3000"
+      },
+      "cookies": [
+        {
+          "name": "Admin User",
+          "cookies": {
+            "sessionId": "admin-session-abc",
+            "userId": "1",
+            "role": "admin",
+            "permissions": "all"
+          }
+        },
+        {
+          "name": "Regular User",
+          "cookies": {
+            "sessionId": "user-session-def",
+            "userId": "100",
+            "role": "user",
+            "permissions": "read"
+          }
+        },
+        {
+          "name": "Guest User",
+          "cookies": {
+            "sessionId": "guest-session-ghi",
+            "role": "guest"
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+Then create requests that require authentication:
+
+```json requests/admin/delete-user.json
+{
+  "name": "Delete User (Admin Only)",
+  "method": "DELETE",
+  "url": "{{baseUrl}}/admin/users/{{userId}}",
+  "cookies": true
+}
+```
+
+When you run this request:
+
+```bash
+mailman run requests/admin/delete-user.json --var userId=123
+? select cookie
+❯ Admin User
+  Regular User
+  Guest User
+```
+
+Select "Admin User" to authenticate with admin privileges.
+
+## Extracting Cookies from Responses
+
+Mailman displays response headers, including `Set-Cookie` headers:
+
+```bash
+mailman run requests/login.json
+
+Status: 200 OK
+Time: 156ms
+
+Response Headers:
+  content-type: application/json
+  set-cookie: sessionId=new-session-xyz; Path=/; HttpOnly
+  set-cookie: userId=user123; Path=/
+
+Response Body:
+{
+  "success": true,
+  "user": {
+    "id": "user123",
+    "name": "John Doe"
+  }
+}
+```
+
+You can copy the cookie values from the response and add them to your `config.json`:
+
+```json
+{
+  "name": "New Session",
+  "cookies": {
+    "sessionId": "new-session-xyz",
+    "userId": "user123"
+  }
+}
+```
+
+## Combining Cookies with Other Headers
+
+If your request file already has headers, cookies are added without overwriting:
+
+```json requests/authenticated-api-call.json
+{
+  "name": "API Call with Auth",
+  "method": "POST",
+  "url": "{{baseUrl}}/api/data",
+  "headers": {
+    "Content-Type": "application/json",
+    "X-API-Version": "v2"
+  },
+  "cookies": true,
+  "body": {
+    "data": "example"
+  }
+}
+```
+
+The final request includes both your custom headers and the `Cookie` header:
+
+```
+POST http://localhost:3000/api/data
+Content-Type: application/json
+X-API-Version: v2
+Cookie: sessionId=abc123; userId=user456
+```
+
+## Best Practices
+
+<Note>
+**Use descriptive names**: Name your cookie groups based on user roles or scenarios ("Admin Session", "Guest User")
+</Note>
+
+<Note>
+**Keep credentials secure**: Store sensitive session tokens in `.gitignore`d files or use environment variables
+</Note>
+
+<Note>
+**Rotate cookies regularly**: Update cookie values when they expire or change
+</Note>
+
+<Note>
+**Test with multiple identities**: Create cookie groups for different user roles to test authorization
+</Note>
+
+<Note>
+**Document cookie sources**: Add comments noting where you obtained the cookie values
+</Note>
+
+## Limitations
+
+<Note>
+Mailman treats all cookies as simple key-value pairs. Advanced cookie attributes (Domain, Path, Expires, Secure, HttpOnly, SameSite) are not supported in the configuration, as the `Cookie` request header only includes names and values.
+</Note>
+
+<Note>
+Cookie groups must be defined in `config.json`. There's no way to load cookies from external sources like browser profiles or cookie jars.
+</Note>
+
+## Related Concepts
+
+- [Request Files](/concepts/request-files) - Learn how to enable cookie injection with `cookies: true`
+- [Environments](/concepts/environments) - Understand how cookie groups are scoped to environments
+- [Variables](/concepts/variables) - Variables and cookies work together to parameterize requests

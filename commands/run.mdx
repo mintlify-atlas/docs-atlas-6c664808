@@ -1,0 +1,345 @@
+---
+title: 'mailman run'
+description: 'Run a request (prompts for selection if no filepath given)'
+---
+
+## Usage
+
+```bash
+mailman run [filepath] [options]
+```
+
+## Description
+
+The `run` command executes an HTTP request and displays the response. It:
+
+- Resolves all variables from environments, `.env` files, and command-line arguments
+- Prompts for any unfilled variables at runtime
+- Makes the HTTP request using the resolved configuration
+- Displays response status, headers, and body
+- Shows request duration
+
+If no filepath is provided, you'll be prompted to select a request interactively from all available requests.
+
+## Arguments
+
+<ParamField path="filepath" type="string" optional>
+  Path to the request file to run (relative to project root). If omitted, an interactive prompt will let you select from available requests.
+</ParamField>
+
+## Options
+
+<ParamField path="--env" type="string" default="defaultEnvironment from config">
+  Specify which environment to use for variable resolution. Short flag: `-e`
+</ParamField>
+
+<ParamField path="--var" type="string[]" optional>
+  Set variables from the command line using key=value format. Can be used multiple times. Short flag: `-v`
+</ParamField>
+
+## Examples
+
+### Run a Specific Request
+
+```bash
+mailman run requests/get-users.json
+```
+
+**Output:**
+
+```
+Running: Get Users
+Environment: dev
+GET http://localhost:3000/users
+
+Status: 200 OK
+Time: 142ms
+
+Response Headers:
+  content-type: application/json
+  content-length: 523
+  date: Fri, 13 Mar 2026 20:30:00 GMT
+
+Response Body:
+[
+  {
+    "id": 1,
+    "name": "John Doe",
+    "email": "john@example.com"
+  },
+  {
+    "id": 2,
+    "name": "Jane Smith",
+    "email": "jane@example.com"
+  }
+]
+```
+
+### Run with Interactive Selection
+
+```bash
+mailman run
+```
+
+**Interactive prompt:**
+
+```
+? Select a request to run
+  Run new request
+❯ Get Users (requests/get-users.json)
+  Create User (requests/create-user.json)
+  Get User Profile (requests/users/get-user-profile.json)
+  Update User (requests/users/update-user.json)
+```
+
+### Run with Specific Environment
+
+```bash
+mailman run requests/get-users.json --env prod
+```
+
+**Output:**
+
+```
+Running: Get Users
+Environment: prod
+GET https://api.example.com/users
+
+Status: 200 OK
+Time: 287ms
+
+Response Headers:
+  content-type: application/json
+  ...
+```
+
+### Run with Command-Line Variables
+
+```bash
+mailman run requests/get-user.json --var userId=123 --var format=json
+```
+
+**Output:**
+
+```
+Running: Get User
+Environment: dev
+GET http://localhost:3000/users/123?format=json
+
+Status: 200 OK
+Time: 95ms
+
+...
+```
+
+### Multiple Variables (Short Flag)
+
+```bash
+mailman run requests/search.json -e prod -v query=mailman -v limit=50
+```
+
+### Run a POST Request
+
+```bash
+mailman run requests/create-user.json
+```
+
+**Output:**
+
+```
+Running: Create User
+Environment: dev
+POST http://localhost:3000/users
+
+Status: 201 Created
+Time: 234ms
+
+Response Headers:
+  content-type: application/json
+  location: /users/42
+
+Response Body:
+{
+  "id": 42,
+  "name": "John Doe",
+  "email": "john@example.com",
+  "createdAt": "2026-03-13T20:30:00Z"
+}
+```
+
+### Error Response
+
+```bash
+mailman run requests/delete-user.json
+```
+
+**Output:**
+
+```
+Running: Delete User
+Environment: dev
+DELETE http://localhost:3000/users/999
+
+Status: 404 Not Found
+Time: 45ms
+
+Response Headers:
+  content-type: application/json
+
+Response Body:
+{
+  "error": "User not found",
+  "code": "USER_NOT_FOUND"
+}
+```
+
+## Variable Resolution
+
+Variables are resolved in the following order (later sources override earlier ones):
+
+1. **Environment variables** - From `config.json` under the selected environment
+2. **Default values** - From the `defaultValues` field in the request file
+3. **`.env` files** - From `.env` (default) or `.env.{environment}` (e.g., `.env.prod`)
+4. **Command-line variables** - From `--var` flags
+5. **Runtime prompts** - For any remaining unfilled variables
+
+### Example with Multiple Variable Sources
+
+**config.json:**
+
+```json
+{
+  "defaultEnvironment": "dev",
+  "environments": {
+    "dev": {
+      "variables": {
+        "baseUrl": "http://localhost:3000",
+        "apiVersion": "v1"
+      }
+    }
+  }
+}
+```
+
+**.env:**
+
+```
+API_KEY=secret-key-from-env-file
+```
+
+**Request file** (`requests/get-user.json`):
+
+```json
+{
+  "name": "Get User",
+  "method": "GET",
+  "url": "{{baseUrl}}/{{apiVersion}}/users/{{userId}}",
+  "headers": {
+    "Authorization": "Bearer {{API_KEY}}"
+  },
+  "defaultValues": {
+    "userId": "1"
+  }
+}
+```
+
+**Command:**
+
+```bash
+mailman run requests/get-user.json --var userId=42
+```
+
+**Resolved request:**
+
+- `baseUrl` → `http://localhost:3000` (from config.json)
+- `apiVersion` → `v1` (from config.json)
+- `userId` → `42` (from --var, overrides defaultValues)
+- `API_KEY` → `secret-key-from-env-file` (from .env)
+
+**Final URL:** `http://localhost:3000/v1/users/42`
+
+## Interactive Variable Prompts
+
+If any variables are not resolved from the sources above, you'll be prompted at runtime:
+
+```bash
+mailman run requests/get-user.json
+```
+
+**Prompt:**
+
+```
+? Enter value for userId: 123
+
+Running: Get User
+...
+```
+
+## Response Status Colors
+
+The status code is colored for quick visual feedback:
+
+- **Green** (2xx) - Success
+- **Yellow** (3xx) - Redirection
+- **Red** (4xx, 5xx) - Client/Server errors
+
+## Cookie Support
+
+If your request file includes a `cookies` field and your environment configuration defines cookies, they will be resolved and included in the request.
+
+## Run a New Request (Ad-hoc)
+
+You can create and run a request without saving it:
+
+```bash
+mailman run
+```
+
+Then select **"Run new request"** from the prompt and configure it interactively.
+
+## Prerequisites
+
+Before using `mailman run`, ensure you have:
+
+1. Initialized a Mailman project with `mailman init`
+2. A valid `config.json` file with environment configurations
+3. At least one request file (or use interactive mode)
+
+## Error Messages
+
+### No config.json Found
+
+```
+No config.json found. Run 'mailman init' first.
+```
+
+**Solution:** Initialize your project with `mailman init`
+
+### Connection Refused
+
+```
+Connection refused. Is the server running?
+```
+
+**Solution:** Ensure the target server is running and accessible at the specified URL.
+
+### Request Failed
+
+```
+Request failed: getaddrinfo ENOTFOUND api.example.com
+```
+
+**Solution:** Check the URL and ensure it's correct. Verify network connectivity.
+
+## Tips
+
+- Use `mailman view` before `mailman run` to preview the resolved request
+- Use `--var` to quickly override variables without editing files
+- Response time is displayed for performance monitoring
+- Use the interactive selection mode to quickly explore available requests
+
+## Related Commands
+
+- [mailman view](/commands/view) - Preview a request before running
+- [mailman list](/commands/list) - List all available requests
+- [mailman new](/commands/new) - Create a new request file

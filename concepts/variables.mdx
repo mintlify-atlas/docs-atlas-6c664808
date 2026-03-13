@@ -1,0 +1,476 @@
+---
+title: Variables
+description: Use dynamic variables in your requests with powerful interpolation
+---
+
+Variables let you parameterize your HTTP requests, making them reusable across different environments and contexts. Mailman uses the `{{variableName}}` syntax for variable interpolation.
+
+## Variable Syntax
+
+Variables are defined using double curly braces:
+
+```json
+{
+  "url": "{{baseUrl}}/users/{{userId}}",
+  "headers": {
+    "Authorization": "Bearer {{API_KEY}}"
+  }
+}
+```
+
+The variable name must be a valid JavaScript identifier (alphanumeric + underscore):
+
+```typescript src/utils/variables.ts
+// Regex pattern: /\{\{(\w+)\}\}/g
+export function findUnfilledVariables(template: string): string[] {
+  const matches = template.matchAll(/\{\{(\w+)\}\}/g);
+  return [...matches].map((match) => match[1]);
+}
+```
+
+## Variable Sources
+
+Variables can come from multiple sources, with a clear precedence order:
+
+<Tabs>
+  <Tab title="1. CLI Arguments (Highest)">
+    Pass variables directly via the `--var` flag:
+
+    ```bash
+    mailman run requests/get-users.json --var userId=123 --var limit=50
+    ```
+
+    This is useful for one-off overrides or testing specific values.
+
+    Implementation in `src/commands/run.ts:115-118`:
+    ```typescript
+    for (const v of options?.var ?? []) {
+      const [key, ...rest] = v.split("=");
+      variables[key] = rest.join("=");
+    }
+    ```
+  </Tab>
+
+  <Tab title="2. .env Files">
+    Load variables from `.env` or `.env.{environment}` files:
+
+    ```bash .env
+    API_KEY=dev-api-key-12345
+    BASE_URL=http://localhost:3000
+    USER_ID=default-user
+    ```
+
+    Then run:
+    ```bash
+    mailman run requests/get-users.json
+    ```
+
+    The appropriate `.env` file is loaded based on the environment:
+    ```typescript src/commands/run.ts:95-100
+    let envFile = ".env";
+    if (options?.env && config.defaultEnvironment !== options?.env) {
+      envFile += `.${options.env}`;
+    }
+    const envPath = path.join(getConfigDir(), envFile);
+    const envs = dotenv.config({ path: envPath }).parsed;
+    ```
+  </Tab>
+
+  <Tab title="3. Request Default Values">
+    Define fallback values in your request file:
+
+    ```json requests/get-user.json
+    {
+      "name": "Get User",
+      "method": "GET",
+      "url": "{{baseUrl}}/users/{{userId}}",
+      "defaultValues": {
+        "userId": "123"
+      }
+    }
+    ```
+
+    These values are used if the variable isn't provided by higher-priority sources:
+    ```typescript src/commands/run.ts:105-109
+    if (request?.defaultValues) {
+      for (const [key, value] of Object.entries(request?.defaultValues)) {
+        variables[key] = value;
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="4. Environment Variables">
+    Store variables in your `config.json` environments:
+
+    ```json config.json
+    {
+      "defaultEnvironment": "dev",
+      "environments": {
+        "dev": {
+          "variables": {
+            "baseUrl": "http://localhost:3000",
+            "apiVersion": "v1"
+          }
+        }
+      }
+    }
+    ```
+
+    These are the base variables for each environment.
+  </Tab>
+
+  <Tab title="5. Interactive Prompts (Lowest)">
+    If a variable is still unfilled, Mailman prompts you:
+
+    ```bash
+    mailman run requests/get-user.json
+    ? Fill variable value for userId: 456
+    ```
+
+    Implementation in `src/utils/variables.ts:22-38`:
+    ```typescript
+    export async function fillUnfilledVariables(
+      unfilledVariables: string[],
+    ): Promise<Record<string, string>> {
+      const unfilledVariablesFiltered = [...new Set(unfilledVariables)];
+      const filledVarRecord: Record<string, string> = {};
+      for (const unfilledVar of unfilledVariablesFiltered) {
+        const response = await prompts({
+          type: "text",
+          name: "value",
+          message: `Fill variable value for ${unfilledVar}`,
+        });
+        if (typeof response.value === "string") {
+          filledVarRecord[unfilledVar] = response.value;
+        }
+      }
+      return filledVarRecord;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Variable Interpolation
+
+Mailman interpolates variables throughout your entire request:
+
+<CodeGroup>
+
+```typescript src/utils/variables.ts (String Interpolation)
+export function interpolate(template: string, variables: Variables): string {
+  return template.replace(
+    /\{\{(\w+)\}\}/g,
+    (match: string, key: string): string => {
+      if (Object.prototype.hasOwnProperty.call(variables, key)) {
+        return variables[key];
+      }
+      return match; // Leave unfilled if not found
+    },
+  );
+}
+```
+
+```typescript src/utils/variables.ts (Object Interpolation)
+export function interpolateObject<T>(obj: T, variables: Variables): T {
+  if (typeof obj === "string") {
+    const interpolated: string = interpolate(obj, variables);
+    return interpolated as unknown as T;
+  }
+
+  if (Array.isArray(obj)) {
+    const mapped: unknown[] = obj.map((item: unknown) =>
+      interpolateObject(item, variables),
+    );
+    return mapped as unknown as T;
+  }
+
+  if (obj !== null && typeof obj === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      result[key] = interpolateObject(value, variables);
+    }
+    return result as unknown as T;
+  }
+
+  return obj;
+}
+```
+
+</CodeGroup>
+
+This recursive interpolation means variables work everywhere:
+
+```json
+{
+  "url": "{{baseUrl}}/api/{{apiVersion}}/users",
+  "headers": {
+    "Authorization": "Bearer {{API_KEY}}",
+    "X-User-Id": "{{userId}}"
+  },
+  "body": {
+    "name": "{{userName}}",
+    "email": "{{userEmail}}",
+    "metadata": {
+      "source": "{{source}}",
+      "campaign": "{{campaign}}"
+    }
+  }
+}
+```
+
+## Finding Unfilled Variables
+
+Mailman scans your entire request object to find any remaining variables:
+
+```typescript src/utils/variables.ts
+export function findUnfilledVariablesInObject<T>(obj: T): string[] {
+  if (typeof obj === "string") {
+    return findUnfilledVariables(obj);
+  }
+  if (Array.isArray(obj)) {
+    return obj.flatMap((item) => findUnfilledVariablesInObject(item));
+  }
+  if (obj !== null && typeof obj === "object") {
+    return Object.values(obj).flatMap((value) =>
+      findUnfilledVariablesInObject(value),
+    );
+  }
+  return [];
+}
+```
+
+This is used in the request execution flow:
+
+```typescript src/commands/run.ts:119-127
+let resolved = resolveRequest(request, variables);
+const unfilledVariables = findUnfilledVariablesInObject(resolved);
+if (unfilledVariables.length > 0) {
+  const filledVariables = await fillUnfilledVariables(unfilledVariables);
+  for (const [key, value] of Object.entries(filledVariables)) {
+    variables[key] = value;
+  }
+  resolved = resolveRequest(request, variables);
+}
+```
+
+## Example: Variable Resolution Flow
+
+Let's trace how variables are resolved for this request:
+
+```json requests/create-post.json
+{
+  "name": "Create Post",
+  "method": "POST",
+  "url": "{{baseUrl}}/posts",
+  "headers": {
+    "Authorization": "Bearer {{API_KEY}}",
+    "Content-Type": "application/json"
+  },
+  "defaultValues": {
+    "authorId": "default-author"
+  },
+  "body": {
+    "title": "{{postTitle}}",
+    "content": "{{postContent}}",
+    "authorId": "{{authorId}}"
+  }
+}
+```
+
+```json config.json
+{
+  "defaultEnvironment": "dev",
+  "environments": {
+    "dev": {
+      "variables": {
+        "baseUrl": "http://localhost:3000"
+      }
+    }
+  }
+}
+```
+
+```bash .env
+API_KEY=dev-key-12345
+```
+
+Now run:
+```bash
+mailman run requests/create-post.json --var postTitle="My First Post"
+```
+
+<Accordion title="Step-by-step resolution">
+1. **Start with environment variables** from `config.json`:
+   ```
+   baseUrl = "http://localhost:3000"
+   ```
+
+2. **Merge request defaultValues**:
+   ```
+   baseUrl = "http://localhost:3000"
+   authorId = "default-author"
+   ```
+
+3. **Merge .env variables**:
+   ```
+   baseUrl = "http://localhost:3000"
+   authorId = "default-author"
+   API_KEY = "dev-key-12345"
+   ```
+
+4. **Merge CLI arguments**:
+   ```
+   baseUrl = "http://localhost:3000"
+   authorId = "default-author"
+   API_KEY = "dev-key-12345"
+   postTitle = "My First Post"
+   ```
+
+5. **Interpolate all variables** in the request
+
+6. **Check for unfilled variables**: `postContent` is still unfilled
+
+7. **Prompt for missing variables**:
+   ```
+   ? Fill variable value for postContent: This is my first blog post!
+   ```
+
+8. **Final interpolation** produces:
+   ```json
+   {
+     "method": "POST",
+     "url": "http://localhost:3000/posts",
+     "headers": {
+       "Authorization": "Bearer dev-key-12345",
+       "Content-Type": "application/json"
+     },
+     "body": {
+       "title": "My First Post",
+       "content": "This is my first blog post!",
+       "authorId": "default-author"
+     }
+   }
+   ```
+</Accordion>
+
+## Variables TypeScript Interface
+
+The `Variables` type is a simple string map:
+
+```typescript src/types.ts
+export interface Variables {
+  [key: string]: string;
+}
+```
+
+<Note>
+All variables are strings. If you need to pass numbers or booleans, they'll be interpolated as strings in the JSON.
+</Note>
+
+## Common Use Cases
+
+<Tabs>
+  <Tab title="API Keys">
+    Store sensitive keys in `.env` files:
+
+    ```bash .env
+    API_KEY=your-secret-key
+    ```
+
+    ```json request.json
+    {
+      "headers": {
+        "Authorization": "Bearer {{API_KEY}}"
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="Base URLs">
+    Define base URLs per environment:
+
+    ```json config.json
+    {
+      "environments": {
+        "dev": {
+          "variables": {
+            "baseUrl": "http://localhost:3000"
+          }
+        },
+        "prod": {
+          "variables": {
+            "baseUrl": "https://api.example.com"
+          }
+        }
+      }
+    }
+    ```
+
+    ```json request.json
+    {
+      "url": "{{baseUrl}}/endpoint"
+    }
+    ```
+  </Tab>
+
+  <Tab title="Dynamic IDs">
+    Pass IDs via CLI for testing:
+
+    ```bash
+    mailman run requests/get-user.json --var userId=123
+    mailman run requests/get-user.json --var userId=456
+    ```
+
+    ```json request.json
+    {
+      "url": "{{baseUrl}}/users/{{userId}}"
+    }
+    ```
+  </Tab>
+
+  <Tab title="Request Bodies">
+    Parameterize request payloads:
+
+    ```json request.json
+    {
+      "body": {
+        "name": "{{userName}}",
+        "email": "{{userEmail}}",
+        "role": "{{userRole}}"
+      },
+      "defaultValues": {
+        "userRole": "user"
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+<Note>
+**Use descriptive names**: Choose variable names that clearly indicate their purpose
+</Note>
+
+<Note>
+**Keep secrets in .env**: Never commit API keys or tokens to version control
+</Note>
+
+<Note>
+**Provide sensible defaults**: Use `defaultValues` in requests for common testing scenarios
+</Note>
+
+<Note>
+**Document required variables**: Add comments in your request files noting which variables are required
+</Note>
+
+<Note>
+**Use CLI vars for one-offs**: The `--var` flag is perfect for testing or overriding specific values
+</Note>
+
+## Related Concepts
+
+- [Request Files](/concepts/request-files) - Learn how variables are used in request definitions
+- [Environments](/concepts/environments) - Understand how environments provide different variable sets
+- [Cookies](/concepts/cookies) - Manage cookie values with environment-specific configuration

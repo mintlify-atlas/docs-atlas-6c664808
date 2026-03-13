@@ -1,0 +1,167 @@
+---
+title: 'mailman new'
+description: 'Create a new request file'
+---
+
+## Usage
+
+```bash
+mailman new
+```
+
+## Description
+
+The `new` command provides an interactive way to create a new HTTP request file. It guides you through:
+
+1. Selecting a directory within your project
+2. Configuring the request details (method, URL, headers, body)
+3. Naming and saving the request file
+
+The command requires an existing Mailman project (initialized with `mailman init`).
+
+## Interactive Prompts
+
+When you run `mailman new`, you'll be prompted for:
+
+- **Directory selection** - Choose where to save the request file
+- **Request name** - A descriptive name for the request
+- **HTTP method** - GET, POST, PUT, DELETE, PATCH, etc.
+- **URL** - The endpoint URL (supports variable interpolation)
+- **Headers** - Key-value pairs for HTTP headers
+- **Body** - Request payload (for methods like POST/PUT)
+- **Filename** - Name for the JSON file (e.g., `create-user.json`)
+
+## Examples
+
+### Creating a GET Request
+
+```bash
+mailman new
+```
+
+**Interactive session:**
+
+```
+Selected directory: requests/
+
+? Request name: Get User Profile
+? HTTP method: GET
+? URL: {{baseUrl}}/users/{{userId}}
+? Add headers? Yes
+  ? Header key: Authorization
+  ? Header value: Bearer {{API_KEY}}
+  ? Add another header? No
+? Filename: get-user-profile.json
+```
+
+**Result:** Creates `requests/get-user-profile.json`
+
+### Creating a POST Request
+
+```bash
+mailman new
+```
+
+**Interactive session:**
+
+```
+Selected directory: requests/users/
+
+? Request name: Create User
+? HTTP method: POST
+? URL: {{baseUrl}}/users
+? Add headers? Yes
+  ? Header key: Content-Type
+  ? Header value: application/json
+  ? Add another header? Yes
+  ? Header key: Authorization
+  ? Header value: Bearer {{API_KEY}}
+  ? Add another header? No
+? Add body? Yes
+  ? Body (JSON): {
+    "name": "Jane Doe",
+    "email": "jane@example.com",
+    "role": "admin"
+  }
+? Filename: create-user.json
+```
+
+**Result:** Creates `requests/users/create-user.json`
+
+## File Structure
+
+The created request file follows this structure:
+
+```json
+{
+  "name": "Request Name",
+  "method": "GET",
+  "url": "{{baseUrl}}/endpoint",
+  "headers": {
+    "Authorization": "Bearer {{API_KEY}}",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "key": "value"
+  }
+}
+```
+
+## Variable Interpolation
+
+You can use variables in your request configuration using the `{{variableName}}` syntax. Variables are resolved from:
+
+1. Environment variables (defined in `config.json`)
+2. `.env` files
+3. Command-line variables (using `--var` flag)
+4. Runtime prompts (for unfilled variables)
+
+## Organizing Requests
+
+You can organize requests into subdirectories:
+
+```
+requests/
+├── users/
+│   ├── get-user.json
+│   ├── create-user.json
+│   └── update-user.json
+├── auth/
+│   ├── login.json
+│   └── refresh-token.json
+└── products/
+    ├── list-products.json
+    └── create-product.json
+```
+
+## Prerequisites
+
+Before using `mailman new`, ensure you have:
+
+1. Initialized a Mailman project with `mailman init`
+2. A valid `config.json` file in your project directory
+
+## Error Messages
+
+### No config.json Found
+
+```
+No config.json found. Run 'mailman init' first.
+```
+
+**Solution:** Initialize your project with `mailman init`
+
+### No Filename Provided
+
+```
+No filename provided
+```
+
+**Solution:** Enter a valid filename when prompted
+
+## Related Commands
+
+- [mailman init](/commands/init) - Initialize a new project
+- [mailman list](/commands/list) - List all available requests
+- [mailman view](/commands/view) - View a request configuration
+- [mailman run](/commands/run) - Execute a request

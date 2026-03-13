@@ -1,0 +1,82 @@
+---
+title: Introduction
+description: An open source CLI alternative to Postman for managing and executing HTTP requests from the terminal.
+---
+
+# Mailman
+
+Mailman is a powerful CLI tool that brings the convenience of Postman to your terminal. Manage HTTP requests with JSON files, variable interpolation, and multi-environment support — all without leaving the command line.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="JSON-Based Requests" icon="file-code">
+    Store and version control your HTTP requests as simple JSON files with variable interpolation
+  </Card>
+  <Card title="Multi-Environment Support" icon="layer-group">
+    Seamlessly switch between dev, staging, and production environments with config-driven variables
+  </Card>
+  <Card title="Interactive CLI" icon="terminal">
+    Select and run requests interactively, or script them for automation with full control
+  </Card>
+  <Card title="Cookie Management" icon="cookie-bite">
+    Manage cookies with named groups per environment for session-based API testing
+  </Card>
+  <Card title="Variable Resolution" icon="brackets-curly">
+    Override variables at runtime with CLI flags or prompt for values on-the-fly
+  </Card>
+  <Card title="Request Previewing" icon="eye">
+    Preview fully resolved requests before execution to verify variables and headers
+  </Card>
+</CardGroup>
+
+## Why Mailman?
+
+**Version Control Your Requests** — Store HTTP requests as JSON files in your project repository alongside your code.
+
+**Environment-Aware** — Define variables per environment in `config.json` and `.env` files, with automatic resolution and override support.
+
+**Developer-Friendly** — Built for CLI workflows with interactive prompts, colored output, and editor integration for request bodies.
+
+**Lightweight & Fast** — Pure TypeScript with minimal dependencies. No GUI overhead, just fast HTTP testing from your terminal.
+
+## Quick Example
+
+```json get-users.json
+{
+  "name": "Get Users",
+  "method": "GET",
+  "url": "{{baseUrl}}/users",
+  "headers": {
+    "Authorization": "Bearer {{API_KEY}}"
+  }
+}
+```
+
+```bash Terminal
+mailman run requests/get-users.json -e prod
+
+Running: Get Users
+Environment: prod
+GET https://api.example.com/users
+
+Status: 200 OK
+Time: 342ms
+```
+
+## Getting Started
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Mailman and set up your first project
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Create and run your first HTTP request in under 2 minutes
+  </Card>
+  <Card title="Commands" icon="terminal" href="/commands/init">
+    Explore all available commands and options
+  </Card>
+  <Card title="Examples" icon="code" href="/examples/get-request">
+    See real-world examples and use cases
+  </Card>
+</CardGroup>

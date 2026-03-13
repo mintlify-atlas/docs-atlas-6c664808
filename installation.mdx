@@ -1,0 +1,165 @@
+---
+title: Installation
+description: Install Mailman CLI and get started with HTTP request management from your terminal
+---
+
+<Steps>
+  <Step title="Install via Package Manager">
+    Install Mailman globally using your preferred package manager:
+
+    <CodeGroup>
+    ```bash npm
+    npm install -g mailman-cli
+    ```
+
+    ```bash yarn
+    yarn global add mailman-cli
+    ```
+
+    ```bash pnpm
+    pnpm add -g mailman-cli
+    ```
+    </CodeGroup>
+
+    <Note>
+      The package name is `mailman-cli`, but the command you'll use is `mailman`.
+    </Note>
+  </Step>
+
+  <Step title="Verify Installation">
+    Verify that Mailman is installed correctly by checking the version:
+
+    ```bash
+    mailman --version
+    ```
+
+    You should see version `1.0.0` or higher.
+
+    View all available commands:
+
+    ```bash
+    mailman --help
+    ```
+
+    <Tip>
+      If the `mailman` command is not found, ensure your global package bin directory is in your PATH.
+    </Tip>
+  </Step>
+
+  <Step title="Initialize Your First Project">
+    Create a new directory for your API requests and initialize Mailman:
+
+    ```bash
+    mkdir my-api-project
+    cd my-api-project
+    mailman init
+    ```
+
+    This creates:
+    - `config.json` - Environment configuration and variables
+    - `requests/` - Directory for your HTTP request files
+    - `requests/get-users.json` - Sample GET request
+    - `requests/create-user.json` - Sample POST request
+
+    <Note>
+      The `init` command is safe to run multiple times. It will skip files that already exist.
+    </Note>
+  </Step>
+</Steps>
+
+## Building from Source
+
+If you want to contribute or customize Mailman, you can build it from source:
+
+<Steps>
+  <Step title="Clone the Repository">
+    ```bash
+    git clone https://github.com/yourusername/mailman-cli.git
+    cd mailman-cli
+    ```
+  </Step>
+
+  <Step title="Install Dependencies">
+    <CodeGroup>
+    ```bash npm
+    npm install
+    ```
+
+    ```bash yarn
+    yarn install
+    ```
+
+    ```bash pnpm
+    pnpm install
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Build the Project">
+    Compile TypeScript to JavaScript:
+
+    <CodeGroup>
+    ```bash npm
+    npm run build
+    ```
+
+    ```bash yarn
+    yarn build
+    ```
+
+    ```bash pnpm
+    pnpm build
+    ```
+    </CodeGroup>
+
+    This compiles the source files from `src/` to `dist/` using the TypeScript compiler.
+  </Step>
+
+  <Step title="Link Globally">
+    Make the `mailman` command available globally:
+
+    <CodeGroup>
+    ```bash npm
+    npm link
+    ```
+
+    ```bash yarn
+    yarn link
+    ```
+
+    ```bash pnpm
+    pnpm link --global
+    ```
+    </CodeGroup>
+
+    <Warning>
+      You may need to use `sudo` on Linux/macOS if you encounter permission errors.
+    </Warning>
+  </Step>
+</Steps>
+
+## System Requirements
+
+Mailman requires:
+- **Node.js** 16.x or higher
+- **npm** 7.x or higher (or equivalent yarn/pnpm version)
+
+## Dependencies
+
+Mailman uses the following key dependencies:
+- `axios` - HTTP client for making requests
+- `commander` - CLI framework
+- `chalk` - Terminal styling
+- `prompts` - Interactive command-line prompts
+- `dotenv` - Environment variable management
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Make your first API request in under 2 minutes
+  </Card>
+  <Card title="Configuration" icon="gear" href="/guides/configuration">
+    Learn about config.json and environment setup
+  </Card>
+</CardGroup>

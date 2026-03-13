@@ -1,0 +1,260 @@
+---
+title: 'POST Request Example'
+description: 'Learn how to send data to an API using POST requests'
+icon: 'paper-plane'
+---
+
+This example demonstrates how to create and execute POST requests with JSON payloads using Mailman.
+
+## Scenario
+
+You need to create a new user in your application by sending user data to your API endpoint.
+
+<Steps>
+  <Step title="Set up your environment">
+    Ensure you have a Mailman project initialized. If not, run:
+
+    ```bash
+    mailman init
+    ```
+
+    Your `config.json` should include your API base URL:
+
+    ```json config.json
+    {
+      "defaultEnvironment": "dev",
+      "environments": {
+        "dev": {
+          "variables": {
+            "baseUrl": "http://localhost:3000"
+          }
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Create the POST request file">
+    Create a file `requests/create-user.json` with the user data:
+
+    ```json requests/create-user.json
+    {
+      "name": "Create User",
+      "method": "POST",
+      "url": "{{baseUrl}}/users",
+      "headers": {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "body": {
+        "name": "John Doe",
+        "email": "john@example.com",
+        "role": "user"
+      }
+    }
+    ```
+
+    <Info>
+      The `Content-Type: application/json` header tells the server you're sending JSON data. Mailman automatically serializes the body object to JSON.
+    </Info>
+  </Step>
+
+  <Step title="Execute the request">
+    Run the POST request:
+
+    ```bash
+    mailman run requests/create-user.json
+    ```
+
+    Expected output:
+
+    ```bash
+    Running: Create User
+    Environment: dev
+    POST http://localhost:3000/users
+
+    Status: 201 Created
+    Time: 234ms
+
+    Response Headers:
+      content-type: application/json
+      location: /users/123
+      date: Fri, 13 Mar 2026 10:35:22 GMT
+
+    Response Body:
+    {
+      "id": 123,
+      "name": "John Doe",
+      "email": "john@example.com",
+      "role": "user",
+      "createdAt": "2026-03-13T10:35:22.000Z"
+    }
+    ```
+  </Step>
+</Steps>
+
+## Dynamic POST Data with Variables
+
+You can use variables in the request body to make your requests more flexible:
+
+<CodeGroup>
+
+```json requests/create-user-dynamic.json
+{
+  "name": "Create User (Dynamic)",
+  "method": "POST",
+  "url": "{{baseUrl}}/users",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "application/json"
+  },
+  "body": {
+    "name": "{{userName}}",
+    "email": "{{userEmail}}",
+    "role": "{{userRole}}"
+  },
+  "defaultValues": {
+    "userName": "Jane Smith",
+    "userEmail": "jane@example.com",
+    "userRole": "admin"
+  }
+}
+```
+
+```json config.json
+{
+  "defaultEnvironment": "dev",
+  "environments": {
+    "dev": {
+      "variables": {
+        "baseUrl": "http://localhost:3000",
+        "userRole": "user"
+      }
+    },
+    "prod": {
+      "variables": {
+        "baseUrl": "https://api.example.com",
+        "userRole": "readonly"
+      }
+    }
+  }
+}
+```
+
+</CodeGroup>
+
+### Override variables at runtime
+
+You can override variables when running the request:
+
+```bash
+mailman run requests/create-user-dynamic.json --var userName="Alice Cooper" --var userEmail="alice@example.com"
+```
+
+If variables are not provided, Mailman will prompt you to enter them:
+
+```bash
+$ mailman run requests/create-user-dynamic.json
+? Fill variable value for userName › 
+```
+
+## Complex Nested JSON
+
+Mailman supports complex nested JSON structures:
+
+```json requests/create-order.json
+{
+  "name": "Create Order",
+  "method": "POST",
+  "url": "{{baseUrl}}/orders",
+  "headers": {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer {{API_KEY}}"
+  },
+  "body": {
+    "userId": "{{userId}}",
+    "items": [
+      {
+        "productId": "prod_123",
+        "quantity": 2,
+        "price": 29.99
+      },
+      {
+        "productId": "prod_456",
+        "quantity": 1,
+        "price": 49.99
+      }
+    ],
+    "shippingAddress": {
+      "street": "123 Main St",
+      "city": "San Francisco",
+      "state": "CA",
+      "zipCode": "94102",
+      "country": "US"
+    },
+    "paymentMethod": "credit_card"
+  },
+  "defaultValues": {
+    "userId": "user_789"
+  }
+}
+```
+
+## Other HTTP Methods
+
+The same pattern works for other HTTP methods:
+
+<CodeGroup>
+
+```json PUT (Update)
+{
+  "name": "Update User",
+  "method": "PUT",
+  "url": "{{baseUrl}}/users/{{userId}}",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "name": "John Doe Updated",
+    "email": "john.updated@example.com"
+  }
+}
+```
+
+```json PATCH (Partial Update)
+{
+  "name": "Update User Email",
+  "method": "PATCH",
+  "url": "{{baseUrl}}/users/{{userId}}",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "email": "new.email@example.com"
+  }
+}
+```
+
+```json DELETE
+{
+  "name": "Delete User",
+  "method": "DELETE",
+  "url": "{{baseUrl}}/users/{{userId}}",
+  "headers": {
+    "Accept": "application/json"
+  }
+}
+```
+
+</CodeGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="lock" href="/examples/authentication">
+    Learn how to add authentication headers
+  </Card>
+  <Card title="Multiple Environments" icon="layer-group" href="/examples/multiple-environments">
+    Manage dev, staging, and production environments
+  </Card>
+</CardGroup>

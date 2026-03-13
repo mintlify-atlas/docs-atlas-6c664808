@@ -1,0 +1,90 @@
+---
+title: 'mailman init'
+description: 'Initialize a new mailman project with sample files'
+---
+
+## Usage
+
+```bash
+mailman init
+```
+
+## Description
+
+The `init` command sets up a new Mailman project in the current directory by creating:
+
+- A `config.json` file with default environment configurations
+- A `requests/` directory for storing request files
+- Sample request files to help you get started
+
+This command is idempotent - if any files already exist, they will be skipped with a warning message.
+
+## What Gets Created
+
+### config.json
+
+The configuration file includes:
+- Default environment set to `dev`
+- Two pre-configured environments (`dev` and `prod`)
+- Environment variables including `baseUrl` and `exampleVariable`
+
+### Sample Request Files
+
+Two example request files are created in the `requests/` directory:
+
+1. **get-users.json** - A GET request example
+2. **create-user.json** - A POST request example with body
+
+Both files demonstrate variable interpolation using the `{{variable}}` syntax.
+
+## Examples
+
+### Initialize a New Project
+
+```bash
+mailman init
+```
+
+**Output:**
+
+```
+Created config.json
+Created requests/ directory
+Created requests/get-users.json
+Created requests/create-user.json
+
+Mailman initialized successfully!
+Run 'mailman list' to see available requests
+```
+
+### Re-running Init (Files Already Exist)
+
+```bash
+mailman init
+```
+
+**Output:**
+
+```
+config.json already exists, skipping...
+get-users.json already exists, skipping...
+create-user.json already exists, skipping...
+
+Mailman initialized successfully!
+Run 'mailman list' to see available requests
+```
+
+## Next Steps
+
+After initializing your project:
+
+1. Run `mailman list` to see available requests
+2. Edit `config.json` to add your own environments and variables
+3. Create new request files using `mailman new`
+4. Run requests with `mailman run`
+
+## Related Commands
+
+- [mailman list](/commands/list) - List all available requests
+- [mailman new](/commands/new) - Create a new request file
+- [mailman set-path](/commands/set-path) - Set default project path

@@ -1,0 +1,248 @@
+---
+title: 'mailman view'
+description: 'View the resolved request that will be made'
+---
+
+## Usage
+
+```bash
+mailman view <filepath> [options]
+```
+
+## Description
+
+The `view` command displays the fully resolved HTTP request configuration for a specific request file. It shows:
+
+- Request name and environment being used
+- HTTP method and URL (with variables resolved)
+- Headers (with variables resolved)
+- Request body (if applicable)
+
+This command is useful for previewing what will be sent before executing a request, especially when using variable interpolation.
+
+## Arguments
+
+<ParamField path="filepath" type="string" required>
+  Path to the request file to view (relative to project root)
+</ParamField>
+
+## Options
+
+<ParamField path="--env" type="string" default="defaultEnvironment from config">
+  Specify which environment to use for variable resolution. Short flag: `-e`
+</ParamField>
+
+## Examples
+
+### View a Request with Default Environment
+
+```bash
+mailman view requests/get-users.json
+```
+
+**Output:**
+
+```
+Request: Get Users
+Environment: dev
+
+Method: GET
+URL: http://localhost:3000/users
+
+Headers:
+  Authorization: Bearer dev-api-key-12345
+```
+
+### View a Request with Production Environment
+
+```bash
+mailman view requests/get-users.json --env prod
+```
+
+**Output:**
+
+```
+Request: Get Users
+Environment: prod
+
+Method: GET
+URL: https://api.example.com/users
+
+Headers:
+  Authorization: Bearer prod-api-key-67890
+```
+
+### View a POST Request with Body
+
+```bash
+mailman view requests/create-user.json
+```
+
+**Output:**
+
+```
+Request: Create User
+Environment: dev
+
+Method: POST
+URL: http://localhost:3000/users
+
+Headers:
+  Authorization: Bearer dev-api-key-12345
+  Content-Type: application/json
+
+Body:
+{
+  "name": "John Doe",
+  "email": "john@example.com"
+}
+```
+
+### Using Short Flag for Environment
+
+```bash
+mailman view requests/get-users.json -e staging
+```
+
+**Output:**
+
+```
+Request: Get Users
+Environment: staging
+
+Method: GET
+URL: https://staging.api.example.com/users
+
+Headers:
+  Authorization: Bearer staging-api-key-xyz
+```
+
+## Variable Resolution
+
+The `view` command resolves variables from multiple sources in this order:
+
+1. **Environment variables** - Defined in `config.json` under the specified environment
+2. **`.env` files** - Environment-specific `.env` files (e.g., `.env.prod`)
+3. **Default environment** - Falls back to the default environment if no `--env` is specified
+
+### Example Configuration
+
+**config.json:**
+
+```json
+{
+  "defaultEnvironment": "dev",
+  "environments": {
+    "dev": {
+      "variables": {
+        "baseUrl": "http://localhost:3000",
+        "API_KEY": "dev-key"
+      }
+    },
+    "prod": {
+      "variables": {
+        "baseUrl": "https://api.example.com",
+        "API_KEY": "prod-key"
+      }
+    }
+  }
+}
+```
+
+**Request file** (`requests/get-users.json`):
+
+```json
+{
+  "name": "Get Users",
+  "method": "GET",
+  "url": "{{baseUrl}}/users",
+  "headers": {
+    "Authorization": "Bearer {{API_KEY}}"
+  }
+}
+```
+
+**Viewing with dev environment:**
+
+```bash
+mailman view requests/get-users.json
+# URL resolves to: http://localhost:3000/users
+# Authorization resolves to: Bearer dev-key
+```
+
+**Viewing with prod environment:**
+
+```bash
+mailman view requests/get-users.json --env prod
+# URL resolves to: https://api.example.com/users
+# Authorization resolves to: Bearer prod-key
+```
+
+## Use Cases
+
+### Debug Variable Interpolation
+
+Verify that variables are resolving correctly:
+
+```bash
+mailman view requests/api-call.json
+```
+
+### Compare Environments
+
+See how the same request differs across environments:
+
+```bash
+mailman view requests/get-users.json --env dev
+mailman view requests/get-users.json --env prod
+```
+
+### Preview Before Executing
+
+Check the request configuration before running it:
+
+```bash
+mailman view requests/delete-user.json
+# Review the configuration
+mailman run requests/delete-user.json
+```
+
+## Prerequisites
+
+Before using `mailman view`, ensure you have:
+
+1. Initialized a Mailman project with `mailman init`
+2. A valid `config.json` file with environment configurations
+3. At least one request file in the `requests/` directory
+
+## Error Messages
+
+### No config.json Found
+
+```
+No config.json found. Run 'mailman init' first.
+```
+
+**Solution:** Initialize your project with `mailman init`
+
+### File Not Found
+
+```
+Request file not found: requests/invalid-file.json
+```
+
+**Solution:** Check the filepath and ensure the request file exists. Use `mailman list` to see available requests.
+
+### Invalid Environment
+
+```
+Environment 'staging' not found in config.json
+```
+
+**Solution:** Add the environment to your `config.json` or use an existing environment name.
+
+## Related Commands
+
+- [mailman run](/commands/run) - Execute a request
+- [mailman list](/commands/list) - List all available requests
+- [mailman new](/commands/new) - Create a new request file

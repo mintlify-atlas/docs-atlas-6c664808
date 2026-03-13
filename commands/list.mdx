@@ -1,0 +1,168 @@
+---
+title: 'mailman list'
+description: 'List all available requests'
+---
+
+## Usage
+
+```bash
+mailman list
+```
+
+## Description
+
+The `list` command displays all HTTP request files found in your Mailman project. It scans the `requests/` directory (and subdirectories) and shows:
+
+- The name of each request (from the `name` field in the JSON file)
+- The relative filepath to each request file
+
+This command helps you quickly see all available requests in your project without manually browsing the file system.
+
+## Examples
+
+### List Requests in a Project
+
+```bash
+mailman list
+```
+
+**Output:**
+
+```
+Available requests:
+
+  Get Users
+  requests/get-users.json
+
+  Create User
+  requests/create-user.json
+
+  Get User Profile
+  requests/users/get-user-profile.json
+
+  Update User
+  requests/users/update-user.json
+
+  Login
+  requests/auth/login.json
+```
+
+### Empty Project (No Requests)
+
+```bash
+mailman list
+```
+
+**Output:**
+
+```
+No requests found in requests/ directory.
+```
+
+## Understanding the Output
+
+The output format for each request is:
+
+```
+  <Request Name>      # From the "name" field in the JSON file
+  <Relative Path>     # Path relative to the project root
+```
+
+**Example request file** (`requests/get-users.json`):
+
+```json
+{
+  "name": "Get Users",
+  "method": "GET",
+  "url": "{{baseUrl}}/users"
+}
+```
+
+**Displayed as:**
+
+```
+  Get Users
+  requests/get-users.json
+```
+
+## Project Structure
+
+The `list` command scans all subdirectories within `requests/`, so you can organize your requests hierarchically:
+
+```
+project/
+├── config.json
+└── requests/
+    ├── users/
+    │   ├── get-user.json
+    │   ├── create-user.json
+    │   └── update-user.json
+    ├── auth/
+    │   ├── login.json
+    │   └── logout.json
+    └── products/
+        ├── list-products.json
+        └── get-product.json
+```
+
+All of these requests will be listed when you run `mailman list`.
+
+## Use Cases
+
+### Quick Reference
+
+Use `list` to quickly see what requests are available without opening files:
+
+```bash
+mailman list
+```
+
+### Before Running a Request
+
+Check available requests before selecting one to run:
+
+```bash
+mailman list
+mailman run requests/get-users.json
+```
+
+### After Creating New Requests
+
+Verify that your new request was created successfully:
+
+```bash
+mailman new
+# ... create request ...
+mailman list
+```
+
+## Prerequisites
+
+Before using `mailman list`, ensure you have:
+
+1. Initialized a Mailman project with `mailman init`
+2. A valid `config.json` file in your project directory
+3. At least one request file in the `requests/` directory (optional)
+
+## Error Messages
+
+### No config.json Found
+
+```
+No config.json found. Run 'mailman init' first.
+```
+
+**Solution:** Initialize your project with `mailman init`
+
+## Tips
+
+- Use descriptive names in the `name` field of your request files for easier identification
+- Organize requests into subdirectories by feature or resource type
+- The list shows all requests regardless of which environment they're configured for
+
+## Related Commands
+
+- [mailman init](/commands/init) - Initialize a new project
+- [mailman new](/commands/new) - Create a new request file
+- [mailman view](/commands/view) - View details of a specific request
+- [mailman run](/commands/run) - Execute a request

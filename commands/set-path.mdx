@@ -1,0 +1,284 @@
+---
+title: 'mailman set-path'
+description: 'Set the default project path for mailman'
+---
+
+## Usage
+
+```bash
+mailman set-path [path] [options]
+```
+
+## Description
+
+The `set-path` command allows you to set a default project directory for Mailman. Once set, you can run Mailman commands from any directory, and they will operate on the configured project.
+
+This is useful when:
+- You have a dedicated Mailman project you use frequently
+- You want to run requests without navigating to the project directory
+- You're integrating Mailman into scripts or automation
+
+The default path is stored globally in your system configuration.
+
+## Arguments
+
+<ParamField path="path" type="string" optional>
+  The directory path to set as the default project. Can be absolute or relative. If omitted, uses the current working directory.
+</ParamField>
+
+## Options
+
+<ParamField path="--clear" type="boolean" default="false">
+  Clear the default project path. Short flag: `-c`
+</ParamField>
+
+## Examples
+
+### Set Default Path to Current Directory
+
+```bash
+cd ~/projects/my-api-tests
+mailman set-path
+```
+
+**Output:**
+
+```
+Default project path set to: /home/user/projects/my-api-tests
+```
+
+### Set Default Path to Specific Directory
+
+```bash
+mailman set-path ~/projects/my-api-tests
+```
+
+**Output:**
+
+```
+Default project path set to: /home/user/projects/my-api-tests
+```
+
+### Set Default Path with Relative Path
+
+```bash
+mailman set-path ./api-tests
+```
+
+**Output:**
+
+```
+Default project path set to: /home/user/current-dir/api-tests
+```
+
+### Clear Default Path
+
+```bash
+mailman set-path --clear
+```
+
+**Output:**
+
+```
+Default project path cleared.
+```
+
+### Clear Default Path (Short Flag)
+
+```bash
+mailman set-path -c
+```
+
+**Output:**
+
+```
+Default project path cleared.
+```
+
+## How It Works
+
+Once a default path is set, Mailman commands will:
+
+1. Check if a default path is configured
+2. Use that path as the project directory
+3. Allow you to run commands from anywhere on your system
+
+### Example Workflow
+
+**Set the default path:**
+
+```bash
+cd ~/projects/my-api-tests
+mailman set-path
+```
+
+**Now run commands from anywhere:**
+
+```bash
+cd ~/downloads
+mailman list  # Lists requests from ~/projects/my-api-tests
+mailman run requests/get-users.json  # Runs from ~/projects/my-api-tests
+```
+
+## Validation
+
+When setting a default path, Mailman validates that:
+
+1. The directory exists
+2. A `config.json` file exists in that directory
+
+If validation fails, you'll see an error message:
+
+```bash
+mailman set-path ~/invalid-directory
+```
+
+**Output:**
+
+```
+No config.json found at /home/user/invalid-directory
+Run 'mailman init' in that directory first.
+```
+
+## Show Current Default Path
+
+To see the currently configured default path, use the [`show-path`](#show-path-command) command:
+
+```bash
+mailman show-path
+```
+
+**Output:**
+
+```
+Default project path: /home/user/projects/my-api-tests
+```
+
+Or if no path is set:
+
+```
+No default project path set.
+```
+
+## Show Path Command
+
+### Usage
+
+```bash
+mailman show-path
+```
+
+### Description
+
+The `show-path` command displays the current default project path (if set).
+
+### Examples
+
+**With default path set:**
+
+```bash
+mailman show-path
+```
+
+**Output:**
+
+```
+Default project path: /home/user/projects/my-api-tests
+```
+
+**Without default path:**
+
+```bash
+mailman show-path
+```
+
+**Output:**
+
+```
+No default project path set.
+```
+
+## Use Cases
+
+### Single Project Workflow
+
+If you primarily work with one API project:
+
+```bash
+mailman set-path ~/projects/my-main-api
+# Now run commands from anywhere
+mailman list
+mailman run requests/health-check.json
+```
+
+### Switching Between Projects
+
+Quickly switch between different API projects:
+
+```bash
+mailman set-path ~/projects/api-v1
+mailman list  # Shows requests from api-v1
+
+mailman set-path ~/projects/api-v2
+mailman list  # Shows requests from api-v2
+```
+
+### Temporary Override
+
+Clear the default path when you want to work in the current directory:
+
+```bash
+mailman set-path --clear
+cd ~/projects/temporary-project
+mailman list  # Uses current directory
+```
+
+### CI/CD Integration
+
+Set the path in CI/CD pipelines:
+
+```bash
+#!/bin/bash
+mailman set-path /app/api-tests
+mailman run requests/smoke-test.json --env prod
+```
+
+## Configuration Storage
+
+The default path is stored in a global configuration file:
+
+- **Linux/macOS:** `~/.config/mailman/config.json`
+- **Windows:** `%APPDATA%\mailman\config.json`
+
+This is separate from your project's `config.json` file.
+
+## Tips
+
+- Use absolute paths to avoid ambiguity
+- Run `mailman show-path` to verify your configuration
+- Clear the default path if you want to work with multiple projects
+- The default path persists across terminal sessions
+
+## Prerequisites
+
+The target directory must:
+
+1. Exist on the filesystem
+2. Contain a valid `config.json` file (from `mailman init`)
+
+## Error Messages
+
+### No config.json Found
+
+```
+No config.json found at /home/user/projects/my-api
+Run 'mailman init' in that directory first.
+```
+
+**Solution:** Navigate to the directory and run `mailman init`, or choose a different directory that already has a Mailman project.
+
+## Related Commands
+
+- [mailman init](/commands/init) - Initialize a new project
+- [mailman list](/commands/list) - List requests (respects default path)
+- [mailman run](/commands/run) - Run requests (respects default path)

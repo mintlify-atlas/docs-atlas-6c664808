@@ -1,0 +1,313 @@
+---
+title: Authentication
+description: Learn how to authenticate HTTP requests using Bearer tokens, API keys, Basic Auth, and custom headers in Mailman.
+---
+
+# Authentication
+
+Mailman supports all standard HTTP authentication methods through headers and variable interpolation. This guide covers common authentication patterns and best practices.
+
+## Bearer Token Authentication
+
+Bearer tokens are commonly used for OAuth 2.0 and JWT authentication.
+
+### Basic Example
+
+```json requests/authenticated-request.json
+{
+  "name": "Get Protected Resource",
+  "method": "GET",
+  "url": "{{baseUrl}}/api/protected",
+  "headers": {
+    "Authorization": "Bearer {{API_TOKEN}}"
+  }
+}
+```
+
+### Using Environment Variables
+
+Store your token in a `.env` file (never commit this!):
+
+```bash .env
+API_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+When you run the request, Mailman automatically loads variables from `.env`:
+
+```bash
+mailman run requests/authenticated-request.json
+```
+
+<Tip>
+Use different `.env.<environment>` files for different environments. See [Environment Files](/guides/environment-files) for details.
+</Tip>
+
+## API Key Authentication
+
+API keys can be passed in headers or query parameters.
+
+### Header-Based API Key
+
+```json requests/api-key-header.json
+{
+  "name": "API Request with Header Key",
+  "method": "GET",
+  "url": "{{baseUrl}}/api/data",
+  "headers": {
+    "X-API-Key": "{{API_KEY}}"
+  }
+}
+```
+
+### Query Parameter API Key
+
+```json requests/api-key-query.json
+{
+  "name": "API Request with Query Key",
+  "method": "GET",
+  "url": "{{baseUrl}}/api/data?api_key={{API_KEY}}"
+}
+```
+
+Store the key in your `.env` file:
+
+```bash .env
+API_KEY=sk_live_1234567890abcdef
+```
+
+## Basic Authentication
+
+For Basic Auth, encode credentials as `username:password` in base64:
+
+```json requests/basic-auth.json
+{
+  "name": "Basic Auth Request",
+  "method": "GET",
+  "url": "{{baseUrl}}/api/resource",
+  "headers": {
+    "Authorization": "Basic {{BASIC_AUTH_CREDENTIALS}}"
+  }
+}
+```
+
+Generate and store the base64-encoded credentials:
+
+```bash
+echo -n "username:password" | base64
+# Output: dXNlcm5hbWU6cGFzc3dvcmQ=
+```
+
+Add to `.env`:
+
+```bash .env
+BASIC_AUTH_CREDENTIALS=dXNlcm5hbWU6cGFzc3dvcmQ=
+```
+
+## Custom Authentication Headers
+
+Some APIs use custom header names:
+
+```json requests/custom-auth.json
+{
+  "name": "Custom Auth Header",
+  "method": "POST",
+  "url": "{{baseUrl}}/api/action",
+  "headers": {
+    "X-Custom-Auth": "{{CUSTOM_TOKEN}}",
+    "X-Client-ID": "{{CLIENT_ID}}",
+    "X-Client-Secret": "{{CLIENT_SECRET}}"
+  }
+}
+```
+
+## Multiple Headers
+
+Combine authentication with other headers:
+
+```json requests/multi-header.json
+{
+  "name": "Multi-Header Request",
+  "method": "POST",
+  "url": "{{baseUrl}}/api/users",
+  "headers": {
+    "Authorization": "Bearer {{API_TOKEN}}",
+    "Content-Type": "application/json",
+    "X-Request-ID": "{{REQUEST_ID}}",
+    "X-Client-Version": "1.0.0"
+  },
+  "body": {
+    "name": "John Doe",
+    "email": "john@example.com"
+  }
+}
+```
+
+## Cookie-Based Authentication
+
+For session-based authentication, use Mailman's built-in cookie management:
+
+```json config.json
+{
+  "defaultEnvironment": "dev",
+  "environments": {
+    "dev": {
+      "variables": {
+        "baseUrl": "http://localhost:3000"
+      },
+      "cookies": [
+        {
+          "name": "Admin Session",
+          "cookies": {
+            "sessionId": "abc123def456",
+            "csrf_token": "token789"
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+Enable cookies in your request:
+
+```json requests/session-request.json
+{
+  "name": "Session-Based Request",
+  "method": "GET",
+  "url": "{{baseUrl}}/api/profile",
+  "cookies": true
+}
+```
+
+Mailman automatically adds the `Cookie` header when you run the request.
+
+<Note>
+If multiple cookie groups are defined, Mailman will prompt you to select one at runtime.
+</Note>
+
+## Runtime Variable Override
+
+Override authentication tokens at runtime without modifying files:
+
+```bash
+mailman run requests/api-request.json --var API_TOKEN=new_token_here
+```
+
+Multiple variables:
+
+```bash
+mailman run requests/api-request.json \
+  --var API_TOKEN=token123 \
+  --var CLIENT_ID=client456
+```
+
+## Interactive Authentication
+
+If a variable is not found, Mailman prompts you to enter it:
+
+```bash
+mailman run requests/api-request.json
+
+# Prompts:
+Fill variable value for API_TOKEN: ___
+```
+
+This is useful for:
+- Temporary tokens
+- One-off requests
+- Testing different credentials
+
+## Source Code Reference
+
+Mailman resolves headers through variable interpolation in `src/utils/request.ts:44-56`:
+
+```typescript src/utils/request.ts
+export function resolveRequest(
+  request: RequestFile,
+  variables: Variables,
+): ResolvedRequest {
+  const interpolated = interpolateObject(request, variables);
+
+  return {
+    name: interpolated.name,
+    method: interpolated.method,
+    url: interpolated.url,
+    headers: interpolated.headers || {},
+    body: interpolated.body,
+  };
+}
+```
+
+Headers are interpolated like any other field, making authentication flexible and consistent.
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Never Commit Secrets" icon="shield-halved">
+    Add `.env*` to `.gitignore`. Store tokens in `.env` files, not in `config.json` or request files
+  </Card>
+  <Card title="Use Environment-Specific Tokens" icon="layer-group">
+    Create `.env.dev`, `.env.staging`, `.env.prod` with different credentials for each environment
+  </Card>
+  <Card title="Rotate Tokens Regularly" icon="arrows-rotate">
+    Update tokens in your `.env` files when they expire or are rotated
+  </Card>
+  <Card title="Document Required Variables" icon="book">
+    Add comments in request files showing which variables need to be set
+  </Card>
+</CardGroup>
+
+## Example: Complete Authenticated Workflow
+
+<Steps>
+  <Step title="Create request file">
+    ```json requests/create-user.json
+    {
+      "name": "Create User",
+      "method": "POST",
+      "url": "{{baseUrl}}/api/users",
+      "headers": {
+        "Authorization": "Bearer {{API_TOKEN}}",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "name": "{{USER_NAME}}",
+        "email": "{{USER_EMAIL}}"
+      }
+    }
+    ```
+  </Step>
+  <Step title="Set up environment variables">
+    ```bash .env.dev
+    API_TOKEN=dev_token_abc123
+    baseUrl=http://localhost:3000
+    ```
+
+    ```bash .env.prod
+    API_TOKEN=prod_token_xyz789
+    baseUrl=https://api.example.com
+    ```
+  </Step>
+  <Step title="Run with environment">
+    ```bash
+    # Development
+    mailman run requests/create-user.json -e dev
+
+    # Production with runtime override
+    mailman run requests/create-user.json -e prod \
+      --var USER_NAME="Jane Doe" \
+      --var USER_EMAIL="jane@example.com"
+    ```
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Environment Files" icon="file" href="/guides/environment-files">
+    Deep dive into `.env` file usage and best practices
+  </Card>
+  <Card title="Variable Resolution" icon="brackets-curly" href="/guides/variable-resolution">
+    Learn the priority order when variables come from multiple sources
+  </Card>
+</CardGroup>
